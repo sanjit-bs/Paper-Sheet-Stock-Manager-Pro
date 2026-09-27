@@ -34,12 +34,12 @@ def fetch_all_data():
 
 data = fetch_all_data()
 
-# Helper function for Bi-Directional Stock Selection UI
+# Helper function for Bi-Directional Stock Selection UI across parameters
 def render_cascading_stock_selector(df_stock, key_prefix):
     st.subheader("🔍 Product & Specifications Selection")
     
     if df_stock.empty:
-        st.warning("No stock available.")
+        st.warning("No existing stock records found.")
         return None
 
     # Prepare DataFrame types
@@ -94,13 +94,13 @@ def render_cascading_stock_selector(df_stock, key_prefix):
     if len(filtered_df) == 1:
         selected_row = filtered_df.iloc[0]
         st.success(
-            f"**Selected Item Balance:** Gross/Grus: `{selected_row['Grus']}` | "
+            f"**Selected Variant Current Balance:** Gross/Grus: `{selected_row['Grus']}` | "
             f"Pcs: `{selected_row['Pcs']}` | Challan Weight: `{selected_row['Challan Weight']} kg`"
         )
         return selected_row
 
     elif len(filtered_df) > 1:
-        st.info(f"💡 {len(filtered_df)} stock variants match your selection. Refine parameters to select exact batch.")
+        st.info(f"💡 {len(filtered_df)} stock variants match your selection. Refine parameters to select exact variant.")
         return None
 
     else:
@@ -146,96 +146,124 @@ with tab1:
             st.dataframe(pd.DataFrame(data.get("history_girraj", [])), use_container_width=True)
 
 # -------------------------------------------------------------------
-# TAB 2: PURCHASE PRIMARY STOCK
+# TAB 2: PURCHASE PRIMARY STOCK (WITH BI-DIRECTIONAL SELECTION & NEW ITEM CREATION)
 # -------------------------------------------------------------------
 with tab2:
     st.header("Add Purchase Stock to Primary Warehouse")
 
-    col1, col2 = st.columns(2)
-    with col1:
-        entry_date = st.date_input("Purchase Date", datetime.now())
-        product = st.text_input("Product Name", placeholder="e.g. Maplitho")
-        width = st.number_input("Width (inches)", min_value=0.0, value=20.0, step=0.1)
-        length = st.number_input("Length (inches)", min_value=0.0, value=30.0, step=0.1)
-        gsm = st.number_input("GSM", min_value=0.0, value=70.0, step=1.0)
+    entry_method = st.radio("Purchase Entry Type:", ["Select Existing Product Specification", "Add Brand New Product Variant"], horizontal=True)
 
-    with col2:
-        calc_mode = st.radio("Entry Based On:", ["Enter Pieces (Pcs)", "Enter Gross (144 pcs)", "Enter Ream (500 pcs)", "Enter Weight (kg)"], horizontal=True)
+    product, width, length, gsm = "", 0.0, 0.0, 0.0
+    valid_selection = False
 
-        if calc_mode == "Enter Pieces (Pcs)":
-            input_pcs = st.number_input("Pcs", min_value=0, value=144, step=1)
-            calc_grus = input_pcs / 144.0
-            calc_weight = (width * length * gsm * input_pcs) / 1550000.0
+    if entry_method == "Select Existing Product Specification":
+        if data and data.get("primary_stock"):
+            df_p_stock = pd.DataFrame(data.get("primary_stock"))
+            selected_item = render_cascading_stock_selector(df_p_stock, key_prefix="pur")
             
-            st.info(f"💡 Calculated Gross: `{calc_grus:.2f}` | Calculated Weight: `{calc_weight:.3f} kg`")
-            challan_wt = st.number_input("Challan Weight (kg)", min_value=0.0, value=float(calc_weight), step=0.001)
-            diff_wt = challan_wt - calc_weight
-            pcs = input_pcs
-            grus = calc_grus
-            actual_wt = calc_weight
-
-        elif calc_mode == "Enter Gross (144 pcs)":
-            input_grus = st.number_input("Gross", min_value=0.0, value=1.0, step=0.01)
-            calc_pcs = int(round(input_grus * 144))
-            calc_weight = (width * length * gsm * calc_pcs) / 1550000.0
-
-            st.info(f"💡 Calculated Pcs: `{calc_pcs}` | Calculated Weight: `{calc_weight:.3f} kg`")
-            challan_wt = st.number_input("Challan Weight (kg)", min_value=0.0, value=float(calc_weight), step=0.001)
-            diff_wt = challan_wt - calc_weight
-            pcs = calc_pcs
-            grus = input_grus
-            actual_wt = calc_weight
-
-        elif calc_mode == "Enter Ream (500 pcs)":
-            input_ream = st.number_input("Reams", min_value=0.0, value=1.0, step=0.01)
-            calc_pcs = int(round(input_ream * 500))
-            calc_grus = calc_pcs / 144.0
-            calc_weight = (width * length * gsm * calc_pcs) / 1550000.0
-
-            st.info(f"💡 Calculated Pcs: `{calc_pcs}` | Gross Equivalent: `{calc_grus:.2f}` | Calculated Weight: `{calc_weight:.3f} kg`")
-            challan_wt = st.number_input("Challan Weight (kg)", min_value=0.0, value=float(calc_weight), step=0.001)
-            diff_wt = challan_wt - calc_weight
-            pcs = calc_pcs
-            grus = calc_grus
-            actual_wt = calc_weight
-
+            if selected_item is not None:
+                product = selected_item['Product']
+                width = float(selected_item['Width'])
+                length = float(selected_item['Length'])
+                gsm = float(selected_item['GSM'])
+                valid_selection = True
         else:
-            input_wt = st.number_input("Weight (kg)", min_value=0.0, value=10.0, step=0.1)
-            if width * length * gsm > 0:
-                calc_pcs = int(round((input_wt * 1550000.0) / (width * length * gsm)))
+            st.warning("No existing stock found. Switch to 'Add Brand New Product Variant'.")
+    else:
+        col_p1, col_p2 = st.columns(2)
+        with col_p1:
+            product = st.text_input("Product Name", placeholder="e.g. Maplitho", key="pur_new_prod")
+            width = st.number_input("Width (inches)", min_value=0.0, value=20.0, step=0.1, key="pur_new_w")
+        with col_p2:
+            length = st.number_input("Length (inches)", min_value=0.0, value=30.0, step=0.1, key="pur_new_l")
+            gsm = st.number_input("GSM", min_value=0.0, value=70.0, step=1.0, key="pur_new_gsm")
+        
+        if product.strip() != "" and width > 0 and length > 0 and gsm > 0:
+            valid_selection = True
+
+    st.divider()
+
+    if valid_selection:
+        col1, col2 = st.columns(2)
+        with col1:
+            entry_date = st.date_input("Purchase Date", datetime.now(), key="pur_date")
+            remark = st.text_input("Remark", placeholder="Supplier details / Lot notes", key="pur_rem")
+
+        with col2:
+            calc_mode = st.radio("Entry Based On:", ["Enter Pieces (Pcs)", "Enter Gross (144 pcs)", "Enter Ream (500 pcs)", "Enter Weight (kg)"], horizontal=True, key="pur_mode")
+
+            if calc_mode == "Enter Pieces (Pcs)":
+                input_pcs = st.number_input("Pcs", min_value=0, value=144, step=1, key="pur_pcs")
+                calc_grus = input_pcs / 144.0
+                calc_weight = (width * length * gsm * input_pcs) / 1550000.0
+                
+                st.info(f"💡 Calculated Gross: `{calc_grus:.2f}` | Calculated Weight: `{calc_weight:.3f} kg`")
+                challan_wt = st.number_input("Challan Weight (kg)", min_value=0.0, value=float(calc_weight), step=0.001, key="pur_cw")
+                diff_wt = challan_wt - calc_weight
+                pcs = input_pcs
+                grus = calc_grus
+                actual_wt = calc_weight
+
+            elif calc_mode == "Enter Gross (144 pcs)":
+                input_grus = st.number_input("Gross", min_value=0.0, value=1.0, step=0.01, key="pur_grus")
+                calc_pcs = int(round(input_grus * 144))
+                calc_weight = (width * length * gsm * calc_pcs) / 1550000.0
+
+                st.info(f"💡 Calculated Pcs: `{calc_pcs}` | Calculated Weight: `{calc_weight:.3f} kg`")
+                challan_wt = st.number_input("Challan Weight (kg)", min_value=0.0, value=float(calc_weight), step=0.001, key="pur_cw")
+                diff_wt = challan_wt - calc_weight
+                pcs = calc_pcs
+                grus = input_grus
+                actual_wt = calc_weight
+
+            elif calc_mode == "Enter Ream (500 pcs)":
+                input_ream = st.number_input("Reams", min_value=0.0, value=1.0, step=0.01, key="pur_ream")
+                calc_pcs = int(round(input_ream * 500))
                 calc_grus = calc_pcs / 144.0
+                calc_weight = (width * length * gsm * calc_pcs) / 1550000.0
+
+                st.info(f"💡 Calculated Pcs: `{calc_pcs}` | Gross Equivalent: `{calc_grus:.2f}` | Calculated Weight: `{calc_weight:.3f} kg`")
+                challan_wt = st.number_input("Challan Weight (kg)", min_value=0.0, value=float(calc_weight), step=0.001, key="pur_cw")
+                diff_wt = challan_wt - calc_weight
+                pcs = calc_pcs
+                grus = calc_grus
+                actual_wt = calc_weight
+
             else:
-                calc_pcs, calc_grus = 0, 0.0
+                input_wt = st.number_input("Weight (kg)", min_value=0.0, value=10.0, step=0.1, key="pur_wt")
+                if width * length * gsm > 0:
+                    calc_pcs = int(round((input_wt * 1550000.0) / (width * length * gsm)))
+                    calc_grus = calc_pcs / 144.0
+                else:
+                    calc_pcs, calc_grus = 0, 0.0
 
-            st.info(f"💡 Calculated Pcs: `{calc_pcs}` | Calculated Gross: `{calc_grus:.2f}`")
-            challan_wt = st.number_input("Challan Weight (kg)", min_value=0.0, value=float(input_wt), step=0.001)
-            diff_wt = challan_wt - input_wt
-            pcs = calc_pcs
-            grus = calc_grus
-            actual_wt = input_wt
+                st.info(f"💡 Calculated Pcs: `{calc_pcs}` | Calculated Gross: `{calc_grus:.2f}`")
+                challan_wt = st.number_input("Challan Weight (kg)", min_value=0.0, value=float(input_wt), step=0.001, key="pur_cw")
+                diff_wt = challan_wt - input_wt
+                pcs = calc_pcs
+                grus = calc_grus
+                actual_wt = input_wt
 
-        remark = st.text_input("Remark", placeholder="Supplier details / Lot notes")
-
-    st.write(f"**Summary:** `Diff Weight`: `{diff_wt:.3f} kg`")
-    if st.button("Submit Purchase Entry"):
-        params = {
-            "action": "add_primary_stock",
-            "date": entry_date.strftime("%d/%m/%Y"),
-            "product": product,
-            "width": width,
-            "length": length,
-            "gsm": gsm,
-            "grus_change": grus,
-            "pcs_change": pcs,
-            "challan_weight_change": challan_wt,
-            "weight_change": actual_wt,
-            "diff_weight_change": diff_wt,
-            "remark": remark
-        }
-        res = requests.get(WEB_APP_URL, params=params)
-        if res.status_code == 200:
-            st.success("✅ Primary stock added successfully!")
-            st.rerun()
+        st.write(f"**Summary:** `Diff Weight`: `{diff_wt:.3f} kg`")
+        if st.button("Submit Purchase Entry"):
+            params = {
+                "action": "add_primary_stock",
+                "date": entry_date.strftime("%d/%m/%Y"),
+                "product": product,
+                "width": width,
+                "length": length,
+                "gsm": gsm,
+                "grus_change": grus,
+                "pcs_change": pcs,
+                "challan_weight_change": challan_wt,
+                "weight_change": actual_wt,
+                "diff_weight_change": diff_wt,
+                "remark": remark
+            }
+            res = requests.get(WEB_APP_URL, params=params)
+            if res.status_code == 200:
+                st.success("✅ Primary stock added successfully!")
+                st.rerun()
 
 # -------------------------------------------------------------------
 # TAB 3: TRANSFER STOCK TO COMPANY
