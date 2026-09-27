@@ -14,15 +14,18 @@ st.title("📦 Paper Stock Management Dashboard")
 
 # Sidebar - Web App Configuration
 st.sidebar.header("Settings")
+
+# Default Apps Script URL
+DEFAULT_URL = "https://script.google.com/macros/s/AKfycbxsPxP17kHYPRIAKi1Knc9nP6UCPC63ggilvwAFVOwmx8uuOHe6PmVGuZ6W0MnEie3w/exec"
+
 WEB_APP_URL = st.sidebar.text_input(
-    "https://script.google.com/macros/s/AKfycbxsPxP17kHYPRIAKi1Knc9nP6UCPC63ggilvwAFVOwmx8uuOHe6PmVGuZ6W0MnEie3w/exec",
-    value="",
-    type="password",
+    label="Google Apps Script Web App URL",
+    value=DEFAULT_URL,
     help="Paste your deployed Apps Script URL ending in /exec"
 )
 
-if not WEB_APP_URL:
-    st.warning("Please enter your Google Apps Script Web App URL in the sidebar to proceed")
+if not WEB_APP_URL.strip():
+    st.warning("Please enter your Google Apps Script Web App URL in the sidebar to proceed.")
     st.stop()
 
 # Helper function to send GET requests to Apps Script
