@@ -18,11 +18,11 @@ WEB_APP_URL = st.sidebar.text_input(
     "Google Apps Script Web App URL",
     value="",
     type="password",
-    help="Paste your deployed Apps Script URL ending in /exec"
+    help="https://script.google.com/macros/s/AKfycbxsPxP17kHYPRIAKi1Knc9nP6UCPC63ggilvwAFVOwmx8uuOHe6PmVGuZ6W0MnEie3w/exec"
 )
 
 if not WEB_APP_URL:
-    st.warning("https://script.google.com/macros/s/AKfycbxsPxP17kHYPRIAKi1Knc9nP6UCPC63ggilvwAFVOwmx8uuOHe6PmVGuZ6W0MnEie3w/exec")
+    st.warning("Please enter your Google Apps Script Web App URL in the sidebar to proceed")
     st.stop()
 
 # Helper function to send GET requests to Apps Script
