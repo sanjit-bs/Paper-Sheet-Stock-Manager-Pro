@@ -247,3 +247,76 @@ with tab3:
                             st.rerun()
                         else:
                             st.error("❌ Transfer failed. Check connection or Apps Script.")
+
+# -------------------------------------------------------------------
+# TAB 4: COMPANY STOCK USAGE / ADJUSTMENTS
+# -------------------------------------------------------------------
+with tab4:
+    st.header("📝 Record Company Stock Usage or Adjustment")
+
+    company = st.selectbox("Select Company", ["shivam enterprise", "GIRRAJ PACKAGING"])
+    
+    # Select target stock list based on chosen company
+    target_stock = data.get("stock_shivam", []) if company == "shivam enterprise" else data.get("stock_girraj", [])
+    
+    if not target_stock:
+        st.warning(f"No stock available for {company}.")
+    else:
+        df_comp_stock = pd.DataFrame(target_stock)
+        
+        def format_comp_item(row):
+            return f"{row['Product']} | {row['Width']}x{row['Length']} | {row['GSM']} GSM (Grus: {row['Grus']}, Pcs: {row['Pcs']}, Wt: {row['Challan Weight']} kg)"
+
+        options = [format_comp_item(row) for _, row in df_comp_stock.iterrows()]
+        selected_item_str = st.selectbox(f"Select Item from {company} Stock:", options)
+
+        selected_idx = options.index(selected_item_str)
+        selected_item = df_comp_stock.iloc[selected_idx]
+
+        with st.form("company_action_form", clear_on_submit=True):
+            entry_type = st.radio("Action Type", ["Used", "Adjusted"], horizontal=True)
+            
+            c1, c2 = st.columns(2)
+            with c1:
+                entry_date = st.date_input("Date", datetime.now())
+                inv_number = st.text_input("Invoice Number (Optional)", value="-")
+            with c2:
+                inv_date = st.date_input("Invoice Date", datetime.now())
+                remark = st.text_input("Remark", placeholder="e.g. Production Batch #12")
+
+            st.subheader("Quantities")
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                grus = st.number_input("Grus", min_value=0.0, step=0.01)
+            with col2:
+                pcs = st.number_input("Pcs", min_value=0, step=1)
+            with col3:
+                challan_wt = st.number_input("Challan Weight (kg)", min_value=0.0, step=0.001)
+
+            submitted = st.form_submit_button("Submit Entry")
+
+            if submitted:
+                params = {
+                    "action": "company_stock_action",
+                    "company_name": company,
+                    "type": entry_type,
+                    "date": entry_date.strftime("%d/%m/%Y"),
+                    "invoice_number": inv_number,
+                    "invoice_date": inv_date.strftime("%d/%m/%Y"),
+                    "product": str(selected_item['Product']),
+                    "width": float(selected_item['Width']),
+                    "length": float(selected_item['Length']),
+                    "gsm": float(selected_item['GSM']),
+                    "grus_change": grus,
+                    "pcs_change": pcs,
+                    "challan_weight_change": challan_wt,
+                    "weight_change": 0,
+                    "diff_weight_change": 0,
+                    "remark": remark
+                }
+                res = requests.get(WEB_APP_URL, params=params)
+                if res.status_code == 200 and res.json().get("status") == "success":
+                    st.success(f"Recorded **{entry_type}** for {company}!")
+                    st.rerun()
+                else:
+                    st.error("Failed to post entry.")
