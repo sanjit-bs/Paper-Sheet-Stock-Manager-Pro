@@ -46,10 +46,11 @@ def fetch_all_data():
 data = fetch_all_data()
 
 # Navigation Tabs
-tab1, tab2, tab3 = st.tabs([
+tab1, tab2, tab3, tab4 = st.tabs([
     "📊 Stock & History View", 
     "➕ Add Primary Stock", 
-    "🚚 Transfer Stock to Company"
+    "🚚 Transfer Stock to Company",
+    "🛻 Sheet Used of Company"  
 ])
 
 # -------------------------------------------------------------------
