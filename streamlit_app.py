@@ -3,23 +3,16 @@ import requests
 import pandas as pd
 from datetime import datetime
 
-# Page configuration
-st.set_page_config(
-    page_title="Paper Stock Management",
-    page_icon="📦",
-    layout="wide"
-)
+# Page Configuration
+st.set_page_config(page_title="Paper Stock Management", page_icon="📦", layout="wide")
 
 st.title("📦 Paper Stock Management Dashboard")
 
-# Sidebar - Security & Configuration
+# Sidebar Configuration
 st.sidebar.header("Settings")
-
-# Fixed Apps Script URL (no longer hidden as password)
 WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxsPxP17kHYPRIAKi1Knc9nP6UCPC63ggilvwAFVOwmx8uuOHe6PmVGuZ6W0MnEie3w/exec"
 
-# Password authentication
-ADMIN_PASSWORD = "1234"  # Change this to your desired password
+ADMIN_PASSWORD = "1234"
 user_password = st.sidebar.text_input("Enter Admin Password:", type="password")
 
 if user_password != ADMIN_PASSWORD:
@@ -29,28 +22,24 @@ if user_password != ADMIN_PASSWORD:
 
 st.sidebar.success("🔓 Access Granted")
 
-# Helper function to send GET requests to Apps Script
+# Fetch Data Helper
 def fetch_all_data():
     try:
-        response = requests.get(f"{WEB_APP_URL}?action=read_all")
-        if response.status_code == 200:
-            return response.json()
-        else:
-            st.error(f"Failed to fetch data. Server status: {response.status_code}")
-            return None
+        res = requests.get(f"{WEB_APP_URL}?action=read_all")
+        if res.status_code == 200:
+            return res.json()
     except Exception as e:
-        st.error(f"Error connecting to Apps Script: {e}")
-        return None
+        st.error(f"Error connecting to Google Apps Script: {e}")
+    return None
 
-# Fetch data
 data = fetch_all_data()
 
 # Navigation Tabs
 tab1, tab2, tab3, tab4 = st.tabs([
     "📊 Stock & History View", 
-    "➕ Add Primary Stock", 
+    "➕ Purchase Primary Stock", 
     "🚚 Transfer Stock to Company",
-    "🛻 Sheet Used of Company"  
+    "📝 Company Stock Usage / Adjustment"
 ])
 
 # -------------------------------------------------------------------
@@ -58,266 +47,210 @@ tab1, tab2, tab3, tab4 = st.tabs([
 # -------------------------------------------------------------------
 with tab1:
     st.header("Stock & History Overview")
-    
     if st.button("🔄 Refresh Data"):
         st.rerun()
 
     if data and data.get("status") == "success":
-        sub_tab1, sub_tab2, sub_tab3 = st.tabs([
-            "Primary Warehouse", 
-            "Shivam Enterprise", 
-            "Girraj Packaging"
-        ])
+        sub_tab1, sub_tab2, sub_tab3 = st.tabs(["Primary Warehouse", "Shivam Enterprise", "Girraj Packaging"])
 
         with sub_tab1:
             st.subheader("Primary Stock")
-            df_p_stock = pd.DataFrame(data.get("primary_stock", []))
-            st.dataframe(df_p_stock, use_container_width=True)
-
-            st.subheader("Primary History")
-            df_p_hist = pd.DataFrame(data.get("primary_history", []))
-            st.dataframe(df_p_hist, use_container_width=True)
+            st.dataframe(pd.DataFrame(data.get("primary_stock", [])), use_container_width=True)
+            st.subheader("Primary History (Transfers Out)")
+            st.dataframe(pd.DataFrame(data.get("primary_history", [])), use_container_width=True)
 
         with sub_tab2:
             st.subheader("Shivam Enterprise Stock")
-            df_s_stock = pd.DataFrame(data.get("stock_shivam", []))
-            st.dataframe(df_s_stock, use_container_width=True)
-
+            st.dataframe(pd.DataFrame(data.get("stock_shivam", [])), use_container_width=True)
             st.subheader("Shivam Enterprise History")
-            df_s_hist = pd.DataFrame(data.get("history_shivam", []))
-            st.dataframe(df_s_hist, use_container_width=True)
+            st.dataframe(pd.DataFrame(data.get("history_shivam", [])), use_container_width=True)
 
         with sub_tab3:
             st.subheader("Girraj Packaging Stock")
-            df_g_stock = pd.DataFrame(data.get("stock_girraj", []))
-            st.dataframe(df_g_stock, use_container_width=True)
-
+            st.dataframe(pd.DataFrame(data.get("stock_girraj", [])), use_container_width=True)
             st.subheader("Girraj Packaging History")
-            df_g_hist = pd.DataFrame(data.get("history_girraj", []))
-            st.dataframe(df_g_hist, use_container_width=True)
+            st.dataframe(pd.DataFrame(data.get("history_girraj", [])), use_container_width=True)
 
 # -------------------------------------------------------------------
-# TAB 2: ADD PRIMARY STOCK
+# TAB 2: PURCHASE PRIMARY STOCK
 # -------------------------------------------------------------------
 with tab2:
     st.header("Add Purchase Stock to Primary Warehouse")
-    
-    with st.form("add_primary_form", clear_on_submit=True):
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            entry_date = st.date_input("Date", datetime.now())
-            product = st.text_input("Product Name", placeholder="e.g. Maplitho")
-            width = st.number_input("Width", min_value=0.0, step=0.1)
-            length = st.number_input("Length", min_value=0.0, step=0.1)
+
+    col1, col2 = st.columns(2)
+    with col1:
+        entry_date = st.date_input("Purchase Date", datetime.now())
+        product = st.text_input("Product Name", placeholder="e.g. Maplitho")
+        width = st.number_input("Width (inches)", min_value=0.0, value=20.0, step=0.1)
+        length = st.number_input("Length (inches)", min_value=0.0, value=30.0, step=0.1)
+        gsm = st.number_input("GSM", min_value=0.0, value=70.0, step=1.0)
+
+    with col2:
+        calc_mode = st.radio("Entry Based On:", ["Enter Pieces (Pcs)", "Enter Weight (kg)"], horizontal=True)
+
+        if calc_mode == "Enter Pieces (Pcs)":
+            input_pcs = st.number_input("Pcs", min_value=0, value=500, step=1)
+            calc_grus = input_pcs / 500.0
+            calc_weight = (width * length * gsm * input_pcs) / 1550000.0
             
-        with col2:
-            gsm = st.number_input("GSM", min_value=0.0, step=1.0)
-            grus = st.number_input("Grus", min_value=0.0, step=0.01)
-            pcs = st.number_input("Pcs", min_value=0, step=1)
-            challan_wt = st.number_input("Challan Weight (kg)", min_value=0.0, step=0.001)
+            st.info(f"💡 Calculated Grus: `{calc_grus:.2f}` | Calculated Weight: `{calc_weight:.3f} kg`")
+            challan_wt = st.number_input("Challan Weight (kg)", min_value=0.0, value=float(calc_weight), step=0.001)
+            diff_wt = challan_wt - calc_weight
+            pcs = input_pcs
+            grus = calc_grus
+            actual_wt = calc_weight
 
-        with col3:
-            actual_wt = st.number_input("Actual Weight (kg)", min_value=0.0, step=0.001)
-            diff_wt = st.number_input("Diff Weight (kg)", min_value=0.0, step=0.001)
-            remark = st.text_area("Remark", placeholder="Supplier or lot notes...")
-
-        submitted = st.form_submit_button("Submit Purchase Entry")
-        
-        if submitted:
-            params = {
-                "action": "add_primary_stock",
-                "date": entry_date.strftime("%d/%m/%Y"),
-                "product": product,
-                "width": width,
-                "length": length,
-                "gsm": gsm,
-                "grus_change": grus,
-                "pcs_change": pcs,
-                "challan_weight_change": challan_wt,
-                "weight_change": actual_wt,
-                "diff_weight_change": diff_wt,
-                "remark": remark
-            }
-            res = requests.get(WEB_APP_URL, params=params)
-            if res.status_code == 200:
-                st.success("Primary stock added successfully!")
+        else:
+            input_wt = st.number_input("Weight (kg)", min_value=0.0, value=10.0, step=0.1)
+            if width * length * gsm > 0:
+                calc_pcs = int(round((input_wt * 1550000.0) / (width * length * gsm)))
+                calc_grus = calc_pcs / 500.0
             else:
-                st.error("Failed to post entry.")
+                calc_pcs, calc_grus = 0, 0.0
+
+            st.info(f"💡 Calculated Pcs: `{calc_pcs}` | Calculated Grus: `{calc_grus:.2f}`")
+            challan_wt = st.number_input("Challan Weight (kg)", min_value=0.0, value=float(input_wt), step=0.001)
+            diff_wt = challan_wt - input_wt
+            pcs = calc_pcs
+            grus = calc_grus
+            actual_wt = input_wt
+
+        remark = st.text_input("Remark", placeholder="Supplier details / Lot notes")
+
+    st.write(f"**Summary:** `Diff Weight`: `{diff_wt:.3f} kg`")
+    if st.button("Submit Purchase Entry"):
+        params = {
+            "action": "add_primary_stock",
+            "date": entry_date.strftime("%d/%m/%Y"),
+            "product": product,
+            "width": width,
+            "length": length,
+            "gsm": gsm,
+            "grus_change": grus,
+            "pcs_change": pcs,
+            "challan_weight_change": challan_wt,
+            "weight_change": actual_wt,
+            "diff_weight_change": diff_wt,
+            "remark": remark
+        }
+        res = requests.get(WEB_APP_URL, params=params)
+        if res.status_code == 200:
+            st.success("✅ Primary stock added successfully!")
+            st.rerun()
 
 # -------------------------------------------------------------------
-# TAB 3: TRANSFER TO COMPANY (Auto-Select Stock from Primary Warehouse)
+# TAB 3: TRANSFER STOCK TO COMPANY
 # -------------------------------------------------------------------
 with tab3:
     st.header("Shift Stock from Primary Warehouse to Company")
 
-    if not data or data.get("status") != "success" or not data.get("primary_stock"):
-        st.warning("⚠️ No primary stock available to transfer. Please add primary stock first.")
-    else:
-        primary_stock_list = data.get("primary_stock", [])
-        df_primary_stock = pd.DataFrame(primary_stock_list)
+    if data and data.get("primary_stock"):
+        df_p_stock = pd.DataFrame(data.get("primary_stock"))
+        options = [f"{r['Product']} | {r['Width']}x{r['Length']} | {r['GSM']} GSM (Grus: {r['Grus']}, Pcs: {r['Pcs']})" for _, r in df_p_stock.iterrows()]
+        
+        selected_str = st.selectbox("Select Primary Stock Item:", options)
+        selected_item = df_p_stock.iloc[options.index(selected_str)]
 
-        # Ensure required numeric columns exist and handle formatting
-        if not df_primary_stock.empty:
-            # Dropdown label formatter
-            def format_item_label(row):
-                return f"{row['Product']} | {row['Width']}x{row['Length']} | {row['GSM']} GSM (Grus: {row['Grus']}, Pcs: {row['Pcs']}, Wt: {row['Challan Weight']} kg)"
+        col1, col2 = st.columns(2)
+        with col1:
+            company = st.selectbox("Target Company", ["shivam enterprise", "GIRRAJ PACKAGING"])
+            trans_date = st.date_input("Transfer Date", datetime.now())
+            inv_number = st.text_input("Invoice Number")
+            inv_date = st.date_input("Invoice Date", datetime.now())
 
-            # Create a selection list
-            options = [format_item_label(row) for _, row in df_primary_stock.iterrows()]
-            selected_item_str = st.selectbox("📦 Select Stock Item from Primary Warehouse:", options)
+        with col2:
+            shift_pcs = st.number_input("Pcs to Shift", min_value=0, max_value=int(selected_item['Pcs']), step=1)
+            shift_grus = shift_pcs / 500.0
+            
+            w, l, g = float(selected_item['Width']), float(selected_item['Length']), float(selected_item['GSM'])
+            shift_wt = (w * l * g * shift_pcs) / 1550000.0 if w * l * g > 0 else 0.0
+            
+            st.info(f"💡 Equivalent Grus: `{shift_grus:.2f}` | Calculated Weight: `{shift_wt:.3f} kg`")
+            challan_wt = st.number_input("Challan Weight (kg)", min_value=0.0, value=float(shift_wt), step=0.001)
+            remark = st.text_input("Transfer Remark")
 
-            # Retrieve selected row details
-            selected_idx = options.index(selected_item_str)
-            selected_item = df_primary_stock.iloc[selected_idx]
-
-            # Display current stock status in an informational banner
-            st.info(
-                f"**Selected Item Available Balance:** "
-                f"Grus: `{selected_item['Grus']}` | Pcs: `{selected_item['Pcs']}` | "
-                f"Challan Weight: `{selected_item['Challan Weight']} kg`"
-            )
-
-            with st.form("transfer_form", clear_on_submit=True):
-                col_comp, col_inv1, col_inv2 = st.columns(3)
-                
-                with col_comp:
-                    company = st.selectbox("Company Name", ["shivam enterprise", "GIRRAJ PACKAGING"])
-                    trans_date = st.date_input("Transfer Date", datetime.now())
-                
-                with col_inv1:
-                    inv_number = st.text_input("Invoice Number")
-                    inv_date = st.date_input("Invoice Date", datetime.now())
-                
-                with col_inv2:
-                    remark = st.text_input("Remark")
-
-                st.subheader("Quantities to Transfer")
-                col_qty1, col_qty2, col_qty3, col_qty4, col_qty5 = st.columns(5)
-
-                with col_qty1:
-                    grus = st.number_input(
-                        "Grus", 
-                        min_value=0.0, 
-                        max_value=float(selected_item['Grus']) if selected_item['Grus'] != "" else 0.0, 
-                        step=0.01
-                    )
-                with col_qty2:
-                    pcs = st.number_input(
-                        "Pcs", 
-                        min_value=0, 
-                        max_value=int(selected_item['Pcs']) if selected_item['Pcs'] != "" else 0, 
-                        step=1
-                    )
-                with col_qty3:
-                    challan_wt = st.number_input("Challan Weight (kg)", min_value=0.0, step=0.001)
-                with col_qty4:
-                    actual_wt = st.number_input("Actual Weight (kg)", min_value=0.0, step=0.001)
-                with col_qty5:
-                    diff_wt = st.number_input("Diff Weight (kg)", min_value=0.0, step=0.001)
-
-                transfer_submitted = st.form_submit_button("🚀 Execute Transfer")
-
-                if transfer_submitted:
-                    if grus == 0 and pcs == 0 and challan_wt == 0:
-                        st.error("Please enter a valid quantity (Grus, Pcs, or Challan Weight) to transfer.")
-                    else:
-                        params = {
-                            "action": "transfer_to_company",
-                            "company_name": company,
-                            "date": trans_date.strftime("%d/%m/%Y"),
-                            "invoice_number": inv_number,
-                            "invoice_date": inv_date.strftime("%d/%m/%Y"),
-                            "product": str(selected_item['Product']),
-                            "width": float(selected_item['Width']),
-                            "length": float(selected_item['Length']),
-                            "gsm": float(selected_item['GSM']),
-                            "grus_change": grus,
-                            "pcs_change": pcs,
-                            "challan_weight_change": challan_wt,
-                            "weight_change": actual_wt,
-                            "diff_weight_change": diff_wt,
-                            "remark": remark
-                        }
-                        
-                        with st.spinner("Processing transfer..."):
-                            res = requests.get(WEB_APP_URL, params=params)
-                            
-                        if res.status_code == 200 and res.json().get("status") == "success":
-                            st.success(f"✅ Successfully transferred stock to **{company}**!")
-                            st.rerun()
-                        else:
-                            st.error("❌ Transfer failed. Check connection or Apps Script.")
+        if st.button("🚀 Execute Transfer"):
+            params = {
+                "action": "transfer_to_company",
+                "company_name": company,
+                "date": trans_date.strftime("%d/%m/%Y"),
+                "invoice_number": inv_number,
+                "invoice_date": inv_date.strftime("%d/%m/%Y"),
+                "product": selected_item['Product'],
+                "width": w,
+                "length": l,
+                "gsm": g,
+                "grus_change": shift_grus,
+                "pcs_change": shift_pcs,
+                "challan_weight_change": challan_wt,
+                "weight_change": shift_wt,
+                "diff_weight_change": challan_wt - shift_wt,
+                "remark": remark
+            }
+            res = requests.get(WEB_APP_URL, params=params)
+            if res.status_code == 200:
+                st.success(f"✅ Transferred stock to {company}!")
+                st.rerun()
 
 # -------------------------------------------------------------------
-# TAB 4: COMPANY STOCK USAGE / ADJUSTMENTS
+# TAB 4: COMPANY USAGE & ADJUSTMENT
 # -------------------------------------------------------------------
 with tab4:
     st.header("📝 Record Company Stock Usage or Adjustment")
 
-    company = st.selectbox("Select Company", ["shivam enterprise", "GIRRAJ PACKAGING"])
-    
-    # Select target stock list based on chosen company
+    company = st.selectbox("Select Company Name", ["shivam enterprise", "GIRRAJ PACKAGING"])
     target_stock = data.get("stock_shivam", []) if company == "shivam enterprise" else data.get("stock_girraj", [])
-    
+
     if not target_stock:
-        st.warning(f"No stock available for {company}.")
+        st.warning(f"No stock records found for {company}.")
     else:
-        df_comp_stock = pd.DataFrame(target_stock)
+        df_c_stock = pd.DataFrame(target_stock)
+        options = [f"{r['Product']} | {r['Width']}x{r['Length']} | {r['GSM']} GSM (Grus: {r['Grus']}, Pcs: {r['Pcs']})" for _, r in df_c_stock.iterrows()]
         
-        def format_comp_item(row):
-            return f"{row['Product']} | {row['Width']}x{row['Length']} | {row['GSM']} GSM (Grus: {row['Grus']}, Pcs: {row['Pcs']}, Wt: {row['Challan Weight']} kg)"
+        selected_str = st.selectbox(f"Select Item from {company} Stock:", options)
+        selected_item = df_c_stock.iloc[options.index(selected_str)]
 
-        options = [format_comp_item(row) for _, row in df_comp_stock.iterrows()]
-        selected_item_str = st.selectbox(f"Select Item from {company} Stock:", options)
-
-        selected_idx = options.index(selected_item_str)
-        selected_item = df_comp_stock.iloc[selected_idx]
-
-        with st.form("company_action_form", clear_on_submit=True):
+        col1, col2 = st.columns(2)
+        with col1:
             entry_type = st.radio("Action Type", ["Used", "Adjusted"], horizontal=True)
-            
-            c1, c2 = st.columns(2)
-            with c1:
-                entry_date = st.date_input("Date", datetime.now())
-                inv_number = st.text_input("Invoice Number (Optional)", value="-")
-            with c2:
-                inv_date = st.date_input("Invoice Date", datetime.now())
-                remark = st.text_input("Remark", placeholder="e.g. Production Batch #12")
+            usage_date = st.date_input("Date", datetime.now(), key="u_date")
+            remark = st.text_input("Remark", placeholder="Production batch or adjustment notes")
 
-            st.subheader("Quantities")
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                grus = st.number_input("Grus", min_value=0.0, step=0.01)
-            with col2:
-                pcs = st.number_input("Pcs", min_value=0, step=1)
-            with col3:
-                challan_wt = st.number_input("Challan Weight (kg)", min_value=0.0, step=0.001)
+        with col2:
+            calc_mode_u = st.radio("Quantity Input Method:", ["Enter Pieces (Pcs)", "Enter Weight (kg)"], horizontal=True, key="u_mode")
+            w, l, g = float(selected_item['Width']), float(selected_item['Length']), float(selected_item['GSM'])
 
-            submitted = st.form_submit_button("Submit Entry")
+            if calc_mode_u == "Enter Pieces (Pcs)":
+                use_pcs = st.number_input("Pcs", min_value=0, step=1, key="u_pcs")
+                use_grus = use_pcs / 500.0
+                use_wt = (w * l * g * use_pcs) / 1550000.0 if w * l * g > 0 else 0.0
+                st.info(f"💡 Calculated Grus: `{use_grus:.2f}` | Weight: `{use_wt:.3f} kg`")
+            else:
+                use_wt = st.number_input("Weight (kg)", min_value=0.0, step=0.1, key="u_wt")
+                use_pcs = int(round((use_wt * 1550000.0) / (w * l * g))) if w * l * g > 0 else 0
+                use_grus = use_pcs / 500.0
+                st.info(f"💡 Calculated Pcs: `{use_pcs}` | Grus: `{use_grus:.2f}`")
 
-            if submitted:
-                params = {
-                    "action": "company_stock_action",
-                    "company_name": company,
-                    "type": entry_type,
-                    "date": entry_date.strftime("%d/%m/%Y"),
-                    "invoice_number": inv_number,
-                    "invoice_date": inv_date.strftime("%d/%m/%Y"),
-                    "product": str(selected_item['Product']),
-                    "width": float(selected_item['Width']),
-                    "length": float(selected_item['Length']),
-                    "gsm": float(selected_item['GSM']),
-                    "grus_change": grus,
-                    "pcs_change": pcs,
-                    "challan_weight_change": challan_wt,
-                    "weight_change": 0,
-                    "diff_weight_change": 0,
-                    "remark": remark
-                }
-                res = requests.get(WEB_APP_URL, params=params)
-                if res.status_code == 200 and res.json().get("status") == "success":
-                    st.success(f"Recorded **{entry_type}** for {company}!")
-                    st.rerun()
-                else:
-                    st.error("Failed to post entry.")
+        if st.button(f"Submit {entry_type} Entry"):
+            params = {
+                "action": "company_stock_action",
+                "company_name": company,
+                "type": entry_type,
+                "date": usage_date.strftime("%d/%m/%Y"),
+                "invoice_number": "-",
+                "invoice_date": "-",
+                "product": selected_item['Product'],
+                "width": w,
+                "length": l,
+                "gsm": g,
+                "grus_change": use_grus,
+                "pcs_change": use_pcs,
+                "challan_weight_change": use_wt,
+                "weight_change": use_wt,
+                "diff_weight_change": 0.0,
+                "remark": remark
+            }
+            res = requests.get(WEB_APP_URL, params=params)
+            if res.status_code == 200:
+                st.success(f"✅ Recorded **{entry_type}** entry for {company}!")
+                st.rerun()
