@@ -22,7 +22,7 @@ WEB_APP_URL = st.sidebar.text_input(
 )
 
 if not WEB_APP_URL:
-    st.warning("https://script.google.com/macros/s/AKfycbxsPxP17kHYPRIAKi1Knc9nP6UCPC63ggilvwAFVOwmx8uuOHe6PmVGuZ6W0MnEie3w/exec.")
+    st.warning("https://script.google.com/macros/s/AKfycbxsPxP17kHYPRIAKi1Knc9nP6UCPC63ggilvwAFVOwmx8uuOHe6PmVGuZ6W0MnEie3w/exec")
     st.stop()
 
 # Helper function to send GET requests to Apps Script
