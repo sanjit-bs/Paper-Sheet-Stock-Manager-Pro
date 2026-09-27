@@ -34,6 +34,13 @@ def fetch_all_data():
 
 data = fetch_all_data()
 
+# Safe Float Helper
+def safe_float(val):
+    try:
+        return float(val)
+    except (ValueError, TypeError):
+        return None
+
 # Dynamic Bi-Directional Selector with New Combination Detection
 def render_cascading_stock_selector(df_stock, key_prefix):
     st.subheader("🔍 Product & Specifications Selection")
@@ -42,9 +49,9 @@ def render_cascading_stock_selector(df_stock, key_prefix):
     
     if not df.empty:
         df['Product'] = df['Product'].astype(str)
-        df['Width'] = df['Width'].astype(float)
-        df['Length'] = df['Length'].astype(float)
-        df['GSM'] = df['GSM'].astype(float)
+        df['Width'] = pd.to_numeric(df['Width'], errors='coerce')
+        df['Length'] = pd.to_numeric(df['Length'], errors='coerce')
+        df['GSM'] = pd.to_numeric(df['GSM'], errors='coerce')
 
     for field in ['prod', 'w', 'l', 'gsm']:
         k = f"{key_prefix}_{field}"
@@ -53,22 +60,28 @@ def render_cascading_stock_selector(df_stock, key_prefix):
 
     filtered_df = df.copy()
 
-    if st.session_state[f"{key_prefix}_prod"] not in ["Select...", ""]:
-        filtered_df = filtered_df[filtered_df['Product'] == st.session_state[f"{key_prefix}_prod"]]
+    # Safely filter selected Product
+    sel_prod = st.session_state[f"{key_prefix}_prod"]
+    if sel_prod not in ["Select...", "All", ""]:
+        filtered_df = filtered_df[filtered_df['Product'] == sel_prod]
 
-    if st.session_state[f"{key_prefix}_w"] not in ["Select...", ""]:
-        filtered_df = filtered_df[filtered_df['Width'] == float(st.session_state[f"{key_prefix}_w"])]
+    # Safely filter numeric parameters
+    sel_w_num = safe_float(st.session_state[f"{key_prefix}_w"])
+    if sel_w_num is not None:
+        filtered_df = filtered_df[filtered_df['Width'] == sel_w_num]
 
-    if st.session_state[f"{key_prefix}_l"] not in ["Select...", ""]:
-        filtered_df = filtered_df[filtered_df['Length'] == float(st.session_state[f"{key_prefix}_l"])]
+    sel_l_num = safe_float(st.session_state[f"{key_prefix}_l"])
+    if sel_l_num is not None:
+        filtered_df = filtered_df[filtered_df['Length'] == sel_l_num]
 
-    if st.session_state[f"{key_prefix}_gsm"] not in ["Select...", ""]:
-        filtered_df = filtered_df[filtered_df['GSM'] == float(st.session_state[f"{key_prefix}_gsm"])]
+    sel_g_num = safe_float(st.session_state[f"{key_prefix}_gsm"])
+    if sel_g_num is not None:
+        filtered_df = filtered_df[filtered_df['GSM'] == sel_g_num]
 
-    avail_prods = ["Select..."] + sorted(df['Product'].unique().tolist()) if not df.empty else ["Select..."]
-    avail_widths = ["Select..."] + [str(w) for w in sorted(df['Width'].unique().tolist())] if not df.empty else ["Select..."]
-    avail_lengths = ["Select..."] + [str(l) for l in sorted(df['Length'].unique().tolist())] if not df.empty else ["Select..."]
-    avail_gsms = ["Select..."] + [str(g) for g in sorted(df['GSM'].unique().tolist())] if not df.empty else ["Select..."]
+    avail_prods = ["Select..."] + sorted(df['Product'].dropna().unique().tolist()) if not df.empty else ["Select..."]
+    avail_widths = ["Select..."] + [str(w) for w in sorted(df['Width'].dropna().unique().tolist())] if not df.empty else ["Select..."]
+    avail_lengths = ["Select..."] + [str(l) for l in sorted(df['Length'].dropna().unique().tolist())] if not df.empty else ["Select..."]
+    avail_gsms = ["Select..."] + [str(g) for g in sorted(df['GSM'].dropna().unique().tolist())] if not df.empty else ["Select..."]
 
     col_p, col_w, col_l, col_g = st.columns(4)
 
@@ -98,12 +111,8 @@ def render_cascading_stock_selector(df_stock, key_prefix):
         return None
 
     else:
-        # Check if user selected Width, Length, GSM but combination is non-existent
-        sel_w = st.session_state[f"{key_prefix}_w"]
-        sel_l = st.session_state[f"{key_prefix}_l"]
-        sel_g = st.session_state[f"{key_prefix}_gsm"]
-
-        if sel_w != "Select..." and sel_l != "Select..." and sel_g != "Select...":
+        # Check if user selected valid numeric Width, Length, GSM but combination is non-existent
+        if sel_w_num is not None and sel_l_num is not None and sel_g_num is not None:
             st.warning("✨ New product combination found! Please enter the Product Name below to create it.")
             new_prod_name = st.text_input("New Product Name", value="", placeholder="e.g. Maplitho / Craft", key=f"{key_prefix}_new_pname")
             
@@ -111,9 +120,9 @@ def render_cascading_stock_selector(df_stock, key_prefix):
                 return {
                     "status": "new",
                     "Product": new_prod_name.strip(),
-                    "Width": float(sel_w),
-                    "Length": float(sel_l),
-                    "GSM": float(sel_g)
+                    "Width": sel_w_num,
+                    "Length": sel_l_num,
+                    "GSM": sel_g_num
                 }
         else:
             st.info("Select Product, Width, Length, and GSM to proceed.")
