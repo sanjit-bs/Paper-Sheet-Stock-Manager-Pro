@@ -41,7 +41,7 @@ def safe_float(val):
     except (ValueError, TypeError):
         return None
 
-# Dynamic Bi-Directional Selector with New Combination Detection
+# Bi-Directional Selector with "➕ Add New" Manual Input Support for Every Field
 def render_cascading_stock_selector(df_stock, key_prefix):
     st.subheader("🔍 Product & Specifications Selection")
     
@@ -53,79 +53,86 @@ def render_cascading_stock_selector(df_stock, key_prefix):
         df['Length'] = pd.to_numeric(df['Length'], errors='coerce')
         df['GSM'] = pd.to_numeric(df['GSM'], errors='coerce')
 
+    # Initialize Session State
     for field in ['prod', 'w', 'l', 'gsm']:
         k = f"{key_prefix}_{field}"
         if k not in st.session_state:
             st.session_state[k] = "Select..."
 
-    filtered_df = df.copy()
-
-    # Safely filter selected Product
-    sel_prod = st.session_state[f"{key_prefix}_prod"]
-    if sel_prod not in ["Select...", "All", ""]:
-        filtered_df = filtered_df[filtered_df['Product'] == sel_prod]
-
-    # Safely filter numeric parameters
-    sel_w_num = safe_float(st.session_state[f"{key_prefix}_w"])
-    if sel_w_num is not None:
-        filtered_df = filtered_df[filtered_df['Width'] == sel_w_num]
-
-    sel_l_num = safe_float(st.session_state[f"{key_prefix}_l"])
-    if sel_l_num is not None:
-        filtered_df = filtered_df[filtered_df['Length'] == sel_l_num]
-
-    sel_g_num = safe_float(st.session_state[f"{key_prefix}_gsm"])
-    if sel_g_num is not None:
-        filtered_df = filtered_df[filtered_df['GSM'] == sel_g_num]
-
-    avail_prods = ["Select..."] + sorted(df['Product'].dropna().unique().tolist()) if not df.empty else ["Select..."]
-    avail_widths = ["Select..."] + [str(w) for w in sorted(df['Width'].dropna().unique().tolist())] if not df.empty else ["Select..."]
-    avail_lengths = ["Select..."] + [str(l) for l in sorted(df['Length'].dropna().unique().tolist())] if not df.empty else ["Select..."]
-    avail_gsms = ["Select..."] + [str(g) for g in sorted(df['GSM'].dropna().unique().tolist())] if not df.empty else ["Select..."]
+    avail_prods = ["Select..."] + sorted(df['Product'].dropna().unique().tolist()) + ["➕ Add New"] if not df.empty else ["Select...", "➕ Add New"]
+    avail_widths = ["Select..."] + [str(w) for w in sorted(df['Width'].dropna().unique().tolist())] + ["➕ Add New"] if not df.empty else ["Select...", "➕ Add New"]
+    avail_lengths = ["Select..."] + [str(l) for l in sorted(df['Length'].dropna().unique().tolist())] + ["➕ Add New"] if not df.empty else ["Select...", "➕ Add New"]
+    avail_gsms = ["Select..."] + [str(g) for g in sorted(df['GSM'].dropna().unique().tolist())] + ["➕ Add New"] if not df.empty else ["Select...", "➕ Add New"]
 
     col_p, col_w, col_l, col_g = st.columns(4)
 
+    # Variables for final values
+    final_prod, final_w, final_l, final_g = None, None, None, None
+
     with col_p:
-        st.selectbox("Product", avail_prods, key=f"{key_prefix}_prod")
+        sel_prod = st.selectbox("Product", avail_prods, key=f"{key_prefix}_prod")
+        if sel_prod == "➕ Add New":
+            final_prod = st.text_input("Enter New Product Name", value="", placeholder="e.g. Maplitho", key=f"{key_prefix}_custom_prod").strip()
+        elif sel_prod not in ["Select...", ""]:
+            final_prod = sel_prod
 
     with col_w:
-        st.selectbox("Width", avail_widths, key=f"{key_prefix}_w")
+        sel_w = st.selectbox("Width", avail_widths, key=f"{key_prefix}_w")
+        if sel_w == "➕ Add New":
+            final_w = st.number_input("Enter New Width", min_value=0.0, value=None, placeholder="e.g. 20.0", step=0.1, key=f"{key_prefix}_custom_w")
+        else:
+            final_w = safe_float(sel_w)
 
     with col_l:
-        st.selectbox("Length", avail_lengths, key=f"{key_prefix}_l")
+        sel_l = st.selectbox("Length", avail_lengths, key=f"{key_prefix}_l")
+        if sel_l == "➕ Add New":
+            final_l = st.number_input("Enter New Length", min_value=0.0, value=None, placeholder="e.g. 30.0", step=0.1, key=f"{key_prefix}_custom_l")
+        else:
+            final_l = safe_float(sel_l)
 
     with col_g:
-        st.selectbox("GSM", avail_gsms, key=f"{key_prefix}_gsm")
+        sel_g = st.selectbox("GSM", avail_gsms, key=f"{key_prefix}_gsm")
+        if sel_g == "➕ Add New":
+            final_g = st.number_input("Enter New GSM", min_value=0.0, value=None, placeholder="e.g. 70.0", step=1.0, key=f"{key_prefix}_custom_g")
+        else:
+            final_g = safe_float(sel_g)
 
-    # Check for matching stock record
-    if len(filtered_df) == 1:
+    # Filter stock matching selections
+    filtered_df = df.copy()
+    if final_prod:
+        filtered_df = filtered_df[filtered_df['Product'] == final_prod]
+    if final_w is not None:
+        filtered_df = filtered_df[filtered_df['Width'] == final_w]
+    if final_l is not None:
+        filtered_df = filtered_df[filtered_df['Length'] == final_l]
+    if final_g is not None:
+        filtered_df = filtered_df[filtered_df['GSM'] == final_g]
+
+    # Evaluate Result
+    if len(filtered_df) == 1 and not filtered_df.empty:
         selected_row = filtered_df.iloc[0]
         st.success(
-            f"**Selected Stock Balance:** Gross/Grus: `{selected_row['Grus']}` | "
+            f"**Selected Existing Stock Balance:** Gross/Grus: `{selected_row['Grus']}` | "
             f"Pcs: `{selected_row['Pcs']}` | Challan Weight: `{selected_row['Challan Weight']} kg`"
         )
         return {"status": "existing", "data": selected_row}
 
+    elif final_prod and final_w is not None and final_l is not None and final_g is not None:
+        st.info("✨ **New Specification Combination Ready!** Proceed below to add quantity.")
+        return {
+            "status": "new",
+            "Product": final_prod,
+            "Width": final_w,
+            "Length": final_l,
+            "GSM": final_g
+        }
+    
     elif len(filtered_df) > 1:
         st.info(f"💡 {len(filtered_df)} variants match your selection. Refine dropdowns to narrow down.")
         return None
-
+    
     else:
-        # Check if user selected valid numeric Width, Length, GSM but combination is non-existent
-        if sel_w_num is not None and sel_l_num is not None and sel_g_num is not None:
-            st.warning("✨ New product combination found! Please enter the Product Name below to create it.")
-            new_prod_name = st.text_input("New Product Name", value="", placeholder="e.g. Maplitho / Craft", key=f"{key_prefix}_new_pname")
-            
-            if new_prod_name.strip() != "":
-                return {
-                    "status": "new",
-                    "Product": new_prod_name.strip(),
-                    "Width": sel_w_num,
-                    "Length": sel_l_num,
-                    "GSM": sel_g_num
-                }
-        else:
-            st.info("Select Product, Width, Length, and GSM to proceed.")
+        st.info("Please complete all 4 specifications (Product, Width, Length, GSM) using choices or '➕ Add New'.")
         return None
 
 
