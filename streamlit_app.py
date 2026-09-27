@@ -12,21 +12,22 @@ st.set_page_config(
 
 st.title("📦 Paper Stock Management Dashboard")
 
-# Sidebar - Web App Configuration
+# Sidebar - Security & Configuration
 st.sidebar.header("Settings")
 
-# Default Apps Script URL
-DEFAULT_URL = "https://script.google.com/macros/s/AKfycbxsPxP17kHYPRIAKi1Knc9nP6UCPC63ggilvwAFVOwmx8uuOHe6PmVGuZ6W0MnEie3w/exec"
+# Fixed Apps Script URL (no longer hidden as password)
+WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxsPxP17kHYPRIAKi1Knc9nP6UCPC63ggilvwAFVOwmx8uuOHe6PmVGuZ6W0MnEie3w/exec"
 
-WEB_APP_URL = st.sidebar.text_input(
-    label="Google Apps Script Web App URL",
-    value=DEFAULT_URL,
-    help="Paste your deployed Apps Script URL ending in /exec"
-)
+# Password authentication
+ADMIN_PASSWORD = "1234"  # Change this to your desired password
+user_password = st.sidebar.text_input("Enter Admin Password:", type="password")
 
-if not WEB_APP_URL.strip():
-    st.warning("Please enter your Google Apps Script Web App URL in the sidebar to proceed.")
+if user_password != ADMIN_PASSWORD:
+    st.sidebar.error("❌ Incorrect Password")
+    st.warning("Please enter the correct password in the sidebar to access the dashboard.")
     st.stop()
+
+st.sidebar.success("🔓 Access Granted")
 
 # Helper function to send GET requests to Apps Script
 def fetch_all_data():
