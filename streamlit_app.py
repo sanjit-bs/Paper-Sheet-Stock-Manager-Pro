@@ -34,7 +34,7 @@ def fetch_all_data():
 
 data = fetch_all_data()
 
-# Helper function for cascading stock selection UI
+# Helper function for Bi-Directional Stock Selection UI
 def render_cascading_stock_selector(df_stock, key_prefix):
     st.subheader("🔍 Product & Specifications Selection")
     
@@ -42,62 +42,70 @@ def render_cascading_stock_selector(df_stock, key_prefix):
         st.warning("No stock available.")
         return None
 
+    # Prepare DataFrame types
+    df = df_stock.copy()
+    df['Product'] = df['Product'].astype(str)
+    df['Width'] = df['Width'].astype(float)
+    df['Length'] = df['Length'].astype(float)
+    df['GSM'] = df['GSM'].astype(float)
+
+    # Initialize session state tracking for this selector instance
+    for field in ['prod', 'w', 'l', 'gsm']:
+        k = f"{key_prefix}_{field}"
+        if k not in st.session_state:
+            st.session_state[k] = "All"
+
+    # Filter dynamic options based on current selections across all parameters
+    filtered_df = df.copy()
+
+    if st.session_state[f"{key_prefix}_prod"] != "All":
+        filtered_df = filtered_df[filtered_df['Product'] == st.session_state[f"{key_prefix}_prod"]]
+
+    if st.session_state[f"{key_prefix}_w"] != "All":
+        filtered_df = filtered_df[filtered_df['Width'] == float(st.session_state[f"{key_prefix}_w"])]
+
+    if st.session_state[f"{key_prefix}_l"] != "All":
+        filtered_df = filtered_df[filtered_df['Length'] == float(st.session_state[f"{key_prefix}_l"])]
+
+    if st.session_state[f"{key_prefix}_gsm"] != "All":
+        filtered_df = filtered_df[filtered_df['GSM'] == float(st.session_state[f"{key_prefix}_gsm"])]
+
+    # Compute remaining valid options for each dropdown dynamically
+    avail_prods = ["All"] + sorted(filtered_df['Product'].unique().tolist())
+    avail_widths = ["All"] + [str(w) for w in sorted(filtered_df['Width'].unique().tolist())]
+    avail_lengths = ["All"] + [str(l) for l in sorted(filtered_df['Length'].unique().tolist())]
+    avail_gsms = ["All"] + [str(g) for g in sorted(filtered_df['GSM'].unique().tolist())]
+
     col_p, col_w, col_l, col_g = st.columns(4)
 
-    # 1. Product Selection
-    products = sorted(df_stock['Product'].astype(str).unique().tolist())
     with col_p:
-        sel_product = st.selectbox("Product", ["Select Product..."] + products, key=f"{key_prefix}_prod")
+        st.selectbox("Product", avail_prods, key=f"{key_prefix}_prod")
 
-    if sel_product == "Select Product...":
-        st.info("Select Product, Width, Length, and GSM to proceed.")
-        return None
-
-    # Filter by Product
-    df_filtered_p = df_stock[df_stock['Product'].astype(str) == sel_product]
-
-    # 2. Width Selection
-    widths = sorted(df_filtered_p['Width'].astype(float).unique().tolist())
     with col_w:
-        sel_width = st.selectbox("Width", ["Select Width..."] + [str(w) for w in widths], key=f"{key_prefix}_w")
+        st.selectbox("Width", avail_widths, key=f"{key_prefix}_w")
 
-    if sel_width == "Select Width...":
-        st.info("Select Product, Width, Length, and GSM to proceed.")
-        return None
-
-    # Filter by Width
-    df_filtered_w = df_filtered_p[df_filtered_p['Width'].astype(float) == float(sel_width)]
-
-    # 3. Length Selection
-    lengths = sorted(df_filtered_w['Length'].astype(float).unique().tolist())
     with col_l:
-        sel_length = st.selectbox("Length", ["Select Length..."] + [str(l) for l in lengths], key=f"{key_prefix}_l")
+        st.selectbox("Length", avail_lengths, key=f"{key_prefix}_l")
 
-    if sel_length == "Select Length...":
-        st.info("Select Product, Width, Length, and GSM to proceed.")
-        return None
-
-    # Filter by Length
-    df_filtered_l = df_filtered_w[df_filtered_w['Length'].astype(float) == float(sel_length)]
-
-    # 4. GSM Selection
-    gsms = sorted(df_filtered_l['GSM'].astype(float).unique().tolist())
     with col_g:
-        sel_gsm = st.selectbox("GSM", ["Select GSM..."] + [str(g) for g in gsms], key=f"{key_prefix}_gsm")
+        st.selectbox("GSM", avail_gsms, key=f"{key_prefix}_gsm")
 
-    if sel_gsm == "Select GSM...":
-        st.info("Select Product, Width, Length, and GSM to proceed.")
+    # Evaluate match status
+    if len(filtered_df) == 1:
+        selected_row = filtered_df.iloc[0]
+        st.success(
+            f"**Selected Item Balance:** Gross/Grus: `{selected_row['Grus']}` | "
+            f"Pcs: `{selected_row['Pcs']}` | Challan Weight: `{selected_row['Challan Weight']} kg`"
+        )
+        return selected_row
+
+    elif len(filtered_df) > 1:
+        st.info(f"💡 {len(filtered_df)} stock variants match your selection. Refine parameters to select exact batch.")
         return None
 
-    # Final Selected Row
-    selected_row = df_filtered_l[df_filtered_l['GSM'].astype(float) == float(sel_gsm)].iloc[0]
-
-    st.success(
-        f"**Selected Stock Balance:** Gross/Grus: `{selected_row['Grus']}` | "
-        f"Pcs: `{selected_row['Pcs']}` | Challan Weight: `{selected_row['Challan Weight']} kg`"
-    )
-    
-    return selected_row
+    else:
+        st.error("No stock matches this exact combination of filters.")
+        return None
 
 
 # Navigation Tabs
