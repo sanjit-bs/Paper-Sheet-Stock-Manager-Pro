@@ -145,56 +145,105 @@ with tab2:
                 st.error("Failed to post entry.")
 
 # -------------------------------------------------------------------
-# TAB 3: TRANSFER TO COMPANY
+# TAB 3: TRANSFER TO COMPANY (Auto-Select Stock from Primary Warehouse)
 # -------------------------------------------------------------------
 with tab3:
-    st.header("Shift Stock from Primary to Company")
+    st.header("Shift Stock from Primary Warehouse to Company")
 
-    with st.form("transfer_form", clear_on_submit=True):
-        company = st.selectbox("Select Target Company", ["shivam enterprise", "GIRRAJ PACKAGING"])
-        
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            trans_date = st.date_input("Transfer Date", datetime.now())
-            inv_number = st.text_input("Invoice Number")
-            inv_date = st.date_input("Invoice Date", datetime.now())
-            
-        with col2:
-            product = st.text_input("Product", key="tr_prod")
-            width = st.number_input("Width", min_value=0.0, step=0.1, key="tr_w")
-            length = st.number_input("Length", min_value=0.0, step=0.1, key="tr_l")
-            gsm = st.number_input("GSM", min_value=0.0, step=1.0, key="tr_gsm")
-            
-        with col3:
-            grus = st.number_input("Grus to Shift", min_value=0.0, step=0.01)
-            pcs = st.number_input("Pcs to Shift", min_value=0, step=1)
-            challan_wt = st.number_input("Challan Weight", min_value=0.0, step=0.001)
-            actual_wt = st.number_input("Actual Weight", min_value=0.0, step=0.001)
-            diff_wt = st.number_input("Diff Weight", min_value=0.0, step=0.001)
-            remark = st.text_input("Remark", key="tr_rem")
+    if not data or data.get("status") != "success" or not data.get("primary_stock"):
+        st.warning("⚠️ No primary stock available to transfer. Please add primary stock first.")
+    else:
+        primary_stock_list = data.get("primary_stock", [])
+        df_primary_stock = pd.DataFrame(primary_stock_list)
 
-        transfer_submitted = st.form_submit_button("Execute Transfer")
+        # Ensure required numeric columns exist and handle formatting
+        if not df_primary_stock.empty:
+            # Dropdown label formatter
+            def format_item_label(row):
+                return f"{row['Product']} | {row['Width']}x{row['Length']} | {row['GSM']} GSM (Grus: {row['Grus']}, Pcs: {row['Pcs']}, Wt: {row['Challan Weight']} kg)"
 
-        if transfer_submitted:
-            params = {
-                "action": "transfer_to_company",
-                "company_name": company,
-                "date": trans_date.strftime("%d/%m/%Y"),
-                "invoice_number": inv_number,
-                "invoice_date": inv_date.strftime("%d/%m/%Y"),
-                "product": product,
-                "width": width,
-                "length": length,
-                "gsm": gsm,
-                "grus_change": grus,
-                "pcs_change": pcs,
-                "challan_weight_change": challan_wt,
-                "weight_change": actual_wt,
-                "diff_weight_change": diff_wt,
-                "remark": remark
-            }
-            res = requests.get(WEB_APP_URL, params=params)
-            if res.status_code == 200:
-                st.success(f"Successfully shifted stock to {company}!")
-            else:
-                st.error("Transfer failed.")
+            # Create a selection list
+            options = [format_item_label(row) for _, row in df_primary_stock.iterrows()]
+            selected_item_str = st.selectbox("📦 Select Stock Item from Primary Warehouse:", options)
+
+            # Retrieve selected row details
+            selected_idx = options.index(selected_item_str)
+            selected_item = df_primary_stock.iloc[selected_idx]
+
+            # Display current stock status in an informational banner
+            st.info(
+                f"**Selected Item Available Balance:** "
+                f"Grus: `{selected_item['Grus']}` | Pcs: `{selected_item['Pcs']}` | "
+                f"Challan Weight: `{selected_item['Challan Weight']} kg`"
+            )
+
+            with st.form("transfer_form", clear_on_submit=True):
+                col_comp, col_inv1, col_inv2 = st.columns(3)
+                
+                with col_comp:
+                    company = st.selectbox("Company Name", ["shivam enterprise", "GIRRAJ PACKAGING"])
+                    trans_date = st.date_input("Transfer Date", datetime.now())
+                
+                with col_inv1:
+                    inv_number = st.text_input("Invoice Number")
+                    inv_date = st.date_input("Invoice Date", datetime.now())
+                
+                with col_inv2:
+                    remark = st.text_input("Remark")
+
+                st.subheader("Quantities to Transfer")
+                col_qty1, col_qty2, col_qty3, col_qty4, col_qty5 = st.columns(5)
+
+                with col_qty1:
+                    grus = st.number_input(
+                        "Grus", 
+                        min_value=0.0, 
+                        max_value=float(selected_item['Grus']) if selected_item['Grus'] != "" else 0.0, 
+                        step=0.01
+                    )
+                with col_qty2:
+                    pcs = st.number_input(
+                        "Pcs", 
+                        min_value=0, 
+                        max_value=int(selected_item['Pcs']) if selected_item['Pcs'] != "" else 0, 
+                        step=1
+                    )
+                with col_qty3:
+                    challan_wt = st.number_input("Challan Weight (kg)", min_value=0.0, step=0.001)
+                with col_qty4:
+                    actual_wt = st.number_input("Actual Weight (kg)", min_value=0.0, step=0.001)
+                with col_qty5:
+                    diff_wt = st.number_input("Diff Weight (kg)", min_value=0.0, step=0.001)
+
+                transfer_submitted = st.form_submit_button("🚀 Execute Transfer")
+
+                if transfer_submitted:
+                    if grus == 0 and pcs == 0 and challan_wt == 0:
+                        st.error("Please enter a valid quantity (Grus, Pcs, or Challan Weight) to transfer.")
+                    else:
+                        params = {
+                            "action": "transfer_to_company",
+                            "company_name": company,
+                            "date": trans_date.strftime("%d/%m/%Y"),
+                            "invoice_number": inv_number,
+                            "invoice_date": inv_date.strftime("%d/%m/%Y"),
+                            "product": str(selected_item['Product']),
+                            "width": float(selected_item['Width']),
+                            "length": float(selected_item['Length']),
+                            "gsm": float(selected_item['GSM']),
+                            "grus_change": grus,
+                            "pcs_change": pcs,
+                            "challan_weight_change": challan_wt,
+                            "weight_change": actual_wt,
+                            "diff_weight_change": diff_wt,
+                            "remark": remark
+                        }
+                        
+                        with st.spinner("Processing transfer..."):
+                            res = requests.get(WEB_APP_URL, params=params)
+                            
+                        if res.status_code == 200 and res.json().get("status") == "success":
+                            st.success(f"✅ Successfully transferred stock to **{company}**!")
+                            st.rerun()
+                        else:
+                            st.error("❌ Transfer failed. Check connection or Apps Script.")
