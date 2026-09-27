@@ -15,10 +15,10 @@ st.title("📦 Paper Stock Management Dashboard")
 # Sidebar - Web App Configuration
 st.sidebar.header("Settings")
 WEB_APP_URL = st.sidebar.text_input(
-    "Google Apps Script Web App URL",
+    "https://script.google.com/macros/s/AKfycbxsPxP17kHYPRIAKi1Knc9nP6UCPC63ggilvwAFVOwmx8uuOHe6PmVGuZ6W0MnEie3w/exec",
     value="",
     type="password",
-    help="https://script.google.com/macros/s/AKfycbxsPxP17kHYPRIAKi1Knc9nP6UCPC63ggilvwAFVOwmx8uuOHe6PmVGuZ6W0MnEie3w/exec"
+    help="Paste your deployed Apps Script URL ending in /exec"
 )
 
 if not WEB_APP_URL:
