@@ -41,7 +41,7 @@ def safe_float(val):
     except (ValueError, TypeError):
         return None
 
-# Dynamic Cascading Selector with Manual Custom Inputs ("➕ Add New")
+# Dynamic Cascading Selector with Auto-Selection for Single Options
 def render_cascading_stock_selector(df_stock, key_prefix):
     st.subheader("🔍 Product & Specifications Selection")
     
@@ -52,12 +52,6 @@ def render_cascading_stock_selector(df_stock, key_prefix):
         df['Width'] = pd.to_numeric(df['Width'], errors='coerce')
         df['Length'] = pd.to_numeric(df['Length'], errors='coerce')
         df['GSM'] = pd.to_numeric(df['GSM'], errors='coerce')
-
-    # Initialize Session State keys
-    for field in ['prod', 'w', 'l', 'gsm']:
-        k = f"{key_prefix}_{field}"
-        if k not in st.session_state:
-            st.session_state[k] = "Select..."
 
     # Retrieve current dropdown selections safely
     curr_prod = st.session_state.get(f"{key_prefix}_prod", "Select...")
@@ -70,19 +64,37 @@ def render_cascading_stock_selector(df_stock, key_prefix):
 
     # 2. Width options depend on selected Product
     df_for_w = df[df['Product'] == curr_prod] if curr_prod not in ["Select...", "➕ Add New", ""] else df
-    avail_widths = ["Select..."] + [str(w) for w in sorted(df_for_w['Width'].dropna().unique().tolist())] + ["➕ Add New"] if not df_for_w.empty else ["Select...", "➕ Add New"]
+    w_list = [str(w) for w in sorted(df_for_w['Width'].dropna().unique().tolist())]
+    avail_widths = ["Select..."] + w_list + ["➕ Add New"] if not df_for_w.empty else ["Select...", "➕ Add New"]
+    
+    # Auto-select Width if only 1 option exists
+    if len(w_list) == 1 and curr_w not in w_list and curr_w != "➕ Add New":
+        st.session_state[f"{key_prefix}_w"] = w_list[0]
+        curr_w = w_list[0]
 
     # 3. Length options depend on selected Product & Width
     df_for_l = df_for_w.copy()
     if safe_float(curr_w) is not None:
         df_for_l = df_for_l[df_for_l['Width'] == safe_float(curr_w)]
-    avail_lengths = ["Select..."] + [str(l) for l in sorted(df_for_l['Length'].dropna().unique().tolist())] + ["➕ Add New"] if not df_for_l.empty else ["Select...", "➕ Add New"]
+    l_list = [str(l) for l in sorted(df_for_l['Length'].dropna().unique().tolist())]
+    avail_lengths = ["Select..."] + l_list + ["➕ Add New"] if not df_for_l.empty else ["Select...", "➕ Add New"]
+    
+    # Auto-select Length if only 1 option exists
+    if len(l_list) == 1 and curr_l not in l_list and curr_l != "➕ Add New":
+        st.session_state[f"{key_prefix}_l"] = l_list[0]
+        curr_l = l_list[0]
 
     # 4. GSM options depend on selected Product, Width, & Length
     df_for_g = df_for_l.copy()
     if safe_float(curr_l) is not None:
         df_for_g = df_for_g[df_for_g['Length'] == safe_float(curr_l)]
-    avail_gsms = ["Select..."] + [str(g) for g in sorted(df_for_g['GSM'].dropna().unique().tolist())] + ["➕ Add New"] if not df_for_g.empty else ["Select...", "➕ Add New"]
+    g_list = [str(g) for g in sorted(df_for_g['GSM'].dropna().unique().tolist())]
+    avail_gsms = ["Select..."] + g_list + ["➕ Add New"] if not df_for_g.empty else ["Select...", "➕ Add New"]
+    
+    # Auto-select GSM if only 1 option exists
+    curr_g = st.session_state.get(f"{key_prefix}_gsm", "Select...")
+    if len(g_list) == 1 and curr_g not in g_list and curr_g != "➕ Add New":
+        st.session_state[f"{key_prefix}_gsm"] = g_list[0]
 
     # Render 4 Dropdown Columns
     col_p, col_w, col_l, col_g = st.columns(4)
