@@ -41,7 +41,7 @@ def safe_float(val):
     except (ValueError, TypeError):
         return None
 
-# Bi-Directional Selector with "➕ Add New" Manual Input Support for Every Field
+# Dynamic Cascading Selector with Manual Custom Inputs ("➕ Add New")
 def render_cascading_stock_selector(df_stock, key_prefix):
     st.subheader("🔍 Product & Specifications Selection")
     
@@ -53,20 +53,40 @@ def render_cascading_stock_selector(df_stock, key_prefix):
         df['Length'] = pd.to_numeric(df['Length'], errors='coerce')
         df['GSM'] = pd.to_numeric(df['GSM'], errors='coerce')
 
-    # Initialize Session State
+    # Initialize Session State keys
     for field in ['prod', 'w', 'l', 'gsm']:
         k = f"{key_prefix}_{field}"
         if k not in st.session_state:
             st.session_state[k] = "Select..."
 
-    avail_prods = ["Select..."] + sorted(df['Product'].dropna().unique().tolist()) + ["➕ Add New"] if not df.empty else ["Select...", "➕ Add New"]
-    avail_widths = ["Select..."] + [str(w) for w in sorted(df['Width'].dropna().unique().tolist())] + ["➕ Add New"] if not df.empty else ["Select...", "➕ Add New"]
-    avail_lengths = ["Select..."] + [str(l) for l in sorted(df['Length'].dropna().unique().tolist())] + ["➕ Add New"] if not df.empty else ["Select...", "➕ Add New"]
-    avail_gsms = ["Select..."] + [str(g) for g in sorted(df['GSM'].dropna().unique().tolist())] + ["➕ Add New"] if not df.empty else ["Select...", "➕ Add New"]
+    # Retrieve current dropdown selections safely
+    curr_prod = st.session_state.get(f"{key_prefix}_prod", "Select...")
+    curr_w = st.session_state.get(f"{key_prefix}_w", "Select...")
+    curr_l = st.session_state.get(f"{key_prefix}_l", "Select...")
 
+    # Dynamic Cascading Dropdown Filtering
+    # 1. Product options from the entire dataset
+    avail_prods = ["Select..."] + sorted(df['Product'].dropna().unique().tolist()) + ["➕ Add New"] if not df.empty else ["Select...", "➕ Add New"]
+
+    # 2. Width options depend on selected Product
+    df_for_w = df[df['Product'] == curr_prod] if curr_prod not in ["Select...", "➕ Add New", ""] else df
+    avail_widths = ["Select..."] + [str(w) for w in sorted(df_for_w['Width'].dropna().unique().tolist())] + ["➕ Add New"] if not df_for_w.empty else ["Select...", "➕ Add New"]
+
+    # 3. Length options depend on selected Product & Width
+    df_for_l = df_for_w.copy()
+    if safe_float(curr_w) is not None:
+        df_for_l = df_for_l[df_for_l['Width'] == safe_float(curr_w)]
+    avail_lengths = ["Select..."] + [str(l) for l in sorted(df_for_l['Length'].dropna().unique().tolist())] + ["➕ Add New"] if not df_for_l.empty else ["Select...", "➕ Add New"]
+
+    # 4. GSM options depend on selected Product, Width, & Length
+    df_for_g = df_for_l.copy()
+    if safe_float(curr_l) is not None:
+        df_for_g = df_for_g[df_for_g['Length'] == safe_float(curr_l)]
+    avail_gsms = ["Select..."] + [str(g) for g in sorted(df_for_g['GSM'].dropna().unique().tolist())] + ["➕ Add New"] if not df_for_g.empty else ["Select...", "➕ Add New"]
+
+    # Render 4 Dropdown Columns
     col_p, col_w, col_l, col_g = st.columns(4)
 
-    # Variables for final values
     final_prod, final_w, final_l, final_g = None, None, None, None
 
     with col_p:
@@ -97,7 +117,7 @@ def render_cascading_stock_selector(df_stock, key_prefix):
         else:
             final_g = safe_float(sel_g)
 
-    # Filter stock matching selections
+    # Filter stock matching final selected parameters
     filtered_df = df.copy()
     if final_prod:
         filtered_df = filtered_df[filtered_df['Product'] == final_prod]
@@ -108,7 +128,7 @@ def render_cascading_stock_selector(df_stock, key_prefix):
     if final_g is not None:
         filtered_df = filtered_df[filtered_df['GSM'] == final_g]
 
-    # Evaluate Result
+    # Evaluate Selection Result
     if len(filtered_df) == 1 and not filtered_df.empty:
         selected_row = filtered_df.iloc[0]
         st.success(
@@ -118,7 +138,7 @@ def render_cascading_stock_selector(df_stock, key_prefix):
         return {"status": "existing", "data": selected_row}
 
     elif final_prod and final_w is not None and final_l is not None and final_g is not None:
-        st.info("✨ **New Specification Combination Ready!** Proceed below to add quantity.")
+        st.info("✨ **New Specification Combination Ready!** Enter quantity details below.")
         return {
             "status": "new",
             "Product": final_prod,
@@ -132,7 +152,7 @@ def render_cascading_stock_selector(df_stock, key_prefix):
         return None
     
     else:
-        st.info("Please complete all 4 specifications (Product, Width, Length, GSM) using choices or '➕ Add New'.")
+        st.info("Please select or enter all 4 specifications (Product, Width, Length, GSM) to proceed.")
         return None
 
 
