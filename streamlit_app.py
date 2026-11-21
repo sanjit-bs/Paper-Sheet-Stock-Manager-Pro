@@ -413,11 +413,16 @@ with tab4:
             col1, col2 = st.columns(2)
             with col1:
                 entry_type = st.radio("Action Type", ["Used", "Adjusted"], horizontal=True, key="u_type")
-                usage_date = st.date_input("Date", datetime.now(), key="u_date")
-                remark = st.text_input("Remark", value="", placeholder="Production batch / notes", key="u_rem")
+                usage_date = st.date_input("Date", datetime.now(), format="DD/MM/YYYY", key="u_date")
+                remark = st.text_input("Remark", value="", placeholder="Production batch / adjustment notes", key="u_rem")
 
             with col2:
-                calc_mode_u = st.radio("Quantity Input Method:", ["Enter Pieces (Pcs)", "Enter Gross (144 pcs)", "Enter Ream (500 pcs)", "Enter Weight (kg)"], horizontal=True, key="u_mode")
+                calc_mode_u = st.radio(
+                    "Quantity Input Method:",
+                    ["Enter Pieces (Pcs)", "Enter Gross (144 pcs)", "Enter Ream (500 pcs)", "Enter Weight (kg)"],
+                    horizontal=True,
+                    key="u_mode"
+                )
                 w, l, g = float(selected_item['Width']), float(selected_item['Length']), float(selected_item['GSM'])
 
                 if calc_mode_u == "Enter Pieces (Pcs)":
@@ -457,7 +462,7 @@ with tab4:
                     else:
                         use_pcs = use_grus = use_wt = 0.0
 
-            if use_pcs > 0 and st.button(f"Submit {entry_type} Entry"):
+            if use_pcs > 0 and st.button(f"Submit {entry_type} Entry", type="primary"):
                 params = {
                     "action": "company_stock_action",
                     "company_name": company,
@@ -476,7 +481,11 @@ with tab4:
                     "diff_weight_change": 0.0,
                     "remark": remark
                 }
-                res = requests.get(WEB_APP_URL, params=params)
-                if res.status_code == 200:
-                    st.success(f"✅ Recorded **{entry_type}** entry for {company}!")
-                    st.rerun()
+                with st.spinner(f"Recording {entry_type} entry..."):
+                    res = requests.get(WEB_APP_URL, params=params, timeout=30)
+                    if res.status_code == 200 and res.json().get("status") == "success":
+                        st.toast(f"✅ Recorded {entry_type} entry for {company}!")
+                        st.cache_data.clear()
+                        st.rerun()
+                    else:
+                        st.error(f"Error: {res.text}")
