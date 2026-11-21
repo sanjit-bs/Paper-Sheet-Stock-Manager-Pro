@@ -9,18 +9,20 @@ st.set_page_config(page_title="Paper Stock Management", page_icon="📦", layout
 st.title("📦 Paper Stock Management Dashboard")
 
 # Sidebar Configuration
-st.sidebar.header("Settings")
+st.sidebar.header("Admin Access")
 WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwP6PuYmT002iNC9bPftiHIOpZEqukZ8mevH0Z12bR4i-Dy9lrJ_UrLjGNvdtHUSkKl/exec"
 
 ADMIN_PASSWORD = "1234"
-user_password = st.sidebar.text_input("Enter Admin Password:", type="password")
+user_password = st.sidebar.text_input("Enter Password to Unlock Entries:", type="password")
 
-if user_password != ADMIN_PASSWORD:
+is_authenticated = (user_password == ADMIN_PASSWORD)
+
+if is_authenticated:
+    st.sidebar.success("🔓 Entry Access Unlocked")
+elif user_password != "":
     st.sidebar.error("❌ Incorrect Password")
-    st.warning("Please enter the correct password in the sidebar to access the dashboard.")
-    st.stop()
-
-st.sidebar.success("🔓 Access Granted")
+else:
+    st.sidebar.info("🔒 View-Only Mode (Enter password to add/edit entries)")
 
 # Fetch Data Helper with short cache for snappy UI interactions
 @st.cache_data(ttl=10)
@@ -175,7 +177,7 @@ tab1, tab2, tab3, tab4 = st.tabs([
 ])
 
 # -------------------------------------------------------------------
-# TAB 1: VIEW STOCKS & HISTORIES
+# TAB 1: VIEW STOCKS & HISTORIES (NO PASSWORD REQUIRED)
 # -------------------------------------------------------------------
 with tab1:
     st.header("Stock & History Overview")
@@ -208,320 +210,329 @@ with tab1:
             st.dataframe(g_hist.iloc[::-1] if not g_hist.empty else g_hist, use_container_width=True, hide_index=True)
 
 # -------------------------------------------------------------------
-# TAB 2: PURCHASE PRIMARY STOCK
+# TAB 2: PURCHASE PRIMARY STOCK (PASSWORD PROTECTED)
 # -------------------------------------------------------------------
 with tab2:
     st.header("Add Purchase Stock to Primary Warehouse")
 
-    df_p_stock = pd.DataFrame(data.get("primary_stock", [])) if data else pd.DataFrame()
-    selection_res = render_cascading_stock_selector(df_p_stock, key_prefix="pur", allow_new=True)
+    if not is_authenticated:
+        st.warning("🔒 This section is locked. Please enter the Admin Password in the left sidebar to make purchase entries.")
+    else:
+        df_p_stock = pd.DataFrame(data.get("primary_stock", [])) if data else pd.DataFrame()
+        selection_res = render_cascading_stock_selector(df_p_stock, key_prefix="pur", allow_new=True)
 
-    if selection_res is not None:
-        if selection_res["status"] == "existing":
-            product = selection_res["data"]["Product"]
-            width = float(selection_res["data"]["Width"])
-            length = float(selection_res["data"]["Length"])
-            gsm = float(selection_res["data"]["GSM"])
-        else:
-            product = selection_res["Product"]
-            width = selection_res["Width"]
-            length = selection_res["Length"]
-            gsm = selection_res["GSM"]
-
-        st.divider()
-
-        col1, col2 = st.columns(2)
-        with col1:
-            entry_date = st.date_input("Purchase Date", datetime.now(), format="DD/MM/YYYY", key="pur_date")
-            remark = st.text_input("Remark", value="", placeholder="Supplier details / Lot notes", key="pur_rem")
-
-        with col2:
-            calc_mode = st.radio(
-                "Entry Based On:",
-                ["Enter Pieces (Pcs)", "Enter Gross (144 pcs)", "Enter Ream (500 pcs)", "Enter Weight (kg)"],
-                horizontal=True,
-                key="pur_mode"
-            )
-
-            if calc_mode == "Enter Pieces (Pcs)":
-                input_pcs = st.number_input("Pcs", min_value=0, value=None, placeholder="Enter Pcs...", step=1, key="pur_pcs")
-                if input_pcs:
-                    calc_grus = input_pcs / 144.0
-                    calc_weight = (width * length * gsm * input_pcs) / 1550000.0
-                    st.info(f"💡 Calculated Gross: `{calc_grus:.2f}` | Calculated Weight: `{calc_weight:.3f} kg`")
-                    challan_wt = st.number_input("Challan Weight (kg)", min_value=0.0, value=float(calc_weight), step=0.001, key="pur_cw")
-                    diff_wt = challan_wt - calc_weight
-                    pcs, grus, actual_wt = input_pcs, calc_grus, calc_weight
-                else:
-                    pcs = grus = actual_wt = challan_wt = diff_wt = 0.0
-
-            elif calc_mode == "Enter Gross (144 pcs)":
-                input_grus = st.number_input("Gross", min_value=0.0, value=None, placeholder="Enter Gross...", step=0.01, key="pur_grus")
-                if input_grus:
-                    calc_pcs = int(round(input_grus * 144))
-                    calc_weight = (width * length * gsm * calc_pcs) / 1550000.0
-                    st.info(f"💡 Calculated Pcs: `{calc_pcs}` | Calculated Weight: `{calc_weight:.3f} kg`")
-                    challan_wt = st.number_input("Challan Weight (kg)", min_value=0.0, value=float(calc_weight), step=0.001, key="pur_cw")
-                    diff_wt = challan_wt - calc_weight
-                    pcs, grus, actual_wt = calc_pcs, input_grus, calc_weight
-                else:
-                    pcs = grus = actual_wt = challan_wt = diff_wt = 0.0
-
-            elif calc_mode == "Enter Ream (500 pcs)":
-                input_ream = st.number_input("Reams", min_value=0.0, value=None, placeholder="Enter Reams...", step=0.01, key="pur_ream")
-                if input_ream:
-                    calc_pcs = int(round(input_ream * 500))
-                    calc_grus = calc_pcs / 144.0
-                    calc_weight = (width * length * gsm * calc_pcs) / 1550000.0
-                    st.info(f"💡 Calculated Pcs: `{calc_pcs}` | Gross Equivalent: `{calc_grus:.2f}` | Calculated Weight: `{calc_weight:.3f} kg`")
-                    challan_wt = st.number_input("Challan Weight (kg)", min_value=0.0, value=float(calc_weight), step=0.001, key="pur_cw")
-                    diff_wt = challan_wt - calc_weight
-                    pcs, grus, actual_wt = calc_pcs, calc_grus, calc_weight
-                else:
-                    pcs = grus = actual_wt = challan_wt = diff_wt = 0.0
-
+        if selection_res is not None:
+            if selection_res["status"] == "existing":
+                product = selection_res["data"]["Product"]
+                width = float(selection_res["data"]["Width"])
+                length = float(selection_res["data"]["Length"])
+                gsm = float(selection_res["data"]["GSM"])
             else:
-                input_wt = st.number_input("Weight (kg)", min_value=0.0, value=None, placeholder="Enter Weight (kg)...", step=0.1, key="pur_wt")
-                if input_wt:
-                    calc_pcs = int(round((input_wt * 1550000.0) / (width * length * gsm))) if width * length * gsm > 0 else 0
-                    calc_grus = calc_pcs / 144.0
-                    st.info(f"💡 Calculated Pcs: `{calc_pcs}` | Calculated Gross: `{calc_grus:.2f}`")
-                    challan_wt = st.number_input("Challan Weight (kg)", min_value=0.0, value=float(input_wt), step=0.001, key="pur_cw")
-                    diff_wt = challan_wt - input_wt
-                    pcs, grus, actual_wt = calc_pcs, calc_grus, input_wt
-                else:
-                    pcs = grus = actual_wt = challan_wt = diff_wt = 0.0
+                product = selection_res["Product"]
+                width = selection_res["Width"]
+                length = selection_res["Length"]
+                gsm = selection_res["GSM"]
 
-        if pcs > 0:
-            st.write(f"**Summary:** `Diff Weight`: `{diff_wt:.3f} kg`")
-            if st.button("Submit Purchase Entry", type="primary"):
-                params = {
-                    "action": "add_primary_stock",
-                    "date": entry_date.strftime("%d/%m/%Y"),
-                    "product": product,
-                    "width": width,
-                    "length": length,
-                    "gsm": gsm,
-                    "grus_change": grus,
-                    "pcs_change": pcs,
-                    "challan_weight_change": challan_wt,
-                    "weight_change": actual_wt,
-                    "diff_weight_change": diff_wt,
-                    "remark": remark
-                }
-                with st.spinner("Adding primary stock..."):
-                    res = requests.get(WEB_APP_URL, params=params, timeout=30)
-                    if res.status_code == 200 and res.json().get("status") == "success":
-                        st.toast("✅ Primary stock added successfully!")
-                        st.cache_data.clear()
-                        st.rerun()
+            st.divider()
+
+            col1, col2 = st.columns(2)
+            with col1:
+                entry_date = st.date_input("Purchase Date", datetime.now(), format="DD/MM/YYYY", key="pur_date")
+                remark = st.text_input("Remark", value="", placeholder="Supplier details / Lot notes", key="pur_rem")
+
+            with col2:
+                calc_mode = st.radio(
+                    "Entry Based On:",
+                    ["Enter Pieces (Pcs)", "Enter Gross (144 pcs)", "Enter Ream (500 pcs)", "Enter Weight (kg)"],
+                    horizontal=True,
+                    key="pur_mode"
+                )
+
+                if calc_mode == "Enter Pieces (Pcs)":
+                    input_pcs = st.number_input("Pcs", min_value=0, value=None, placeholder="Enter Pcs...", step=1, key="pur_pcs")
+                    if input_pcs:
+                        calc_grus = input_pcs / 144.0
+                        calc_weight = (width * length * gsm * input_pcs) / 1550000.0
+                        st.info(f"💡 Calculated Gross: `{calc_grus:.2f}` | Calculated Weight: `{calc_weight:.3f} kg`")
+                        challan_wt = st.number_input("Challan Weight (kg)", min_value=0.0, value=float(calc_weight), step=0.001, key="pur_cw")
+                        diff_wt = challan_wt - calc_weight
+                        pcs, grus, actual_wt = input_pcs, calc_grus, calc_weight
                     else:
-                        st.error(f"Error: {res.text}")
+                        pcs = grus = actual_wt = challan_wt = diff_wt = 0.0
+
+                elif calc_mode == "Enter Gross (144 pcs)":
+                    input_grus = st.number_input("Gross", min_value=0.0, value=None, placeholder="Enter Gross...", step=0.01, key="pur_grus")
+                    if input_grus:
+                        calc_pcs = int(round(input_grus * 144))
+                        calc_weight = (width * length * gsm * calc_pcs) / 1550000.0
+                        st.info(f"💡 Calculated Pcs: `{calc_pcs}` | Calculated Weight: `{calc_weight:.3f} kg`")
+                        challan_wt = st.number_input("Challan Weight (kg)", min_value=0.0, value=float(calc_weight), step=0.001, key="pur_cw")
+                        diff_wt = challan_wt - calc_weight
+                        pcs, grus, actual_wt = calc_pcs, input_grus, calc_weight
+                    else:
+                        pcs = grus = actual_wt = challan_wt = diff_wt = 0.0
+
+                elif calc_mode == "Enter Ream (500 pcs)":
+                    input_ream = st.number_input("Reams", min_value=0.0, value=None, placeholder="Enter Reams...", step=0.01, key="pur_ream")
+                    if input_ream:
+                        calc_pcs = int(round(input_ream * 500))
+                        calc_grus = calc_pcs / 144.0
+                        calc_weight = (width * length * gsm * calc_pcs) / 1550000.0
+                        st.info(f"💡 Calculated Pcs: `{calc_pcs}` | Gross Equivalent: `{calc_grus:.2f}` | Calculated Weight: `{calc_weight:.3f} kg`")
+                        challan_wt = st.number_input("Challan Weight (kg)", min_value=0.0, value=float(calc_weight), step=0.001, key="pur_cw")
+                        diff_wt = challan_wt - calc_weight
+                        pcs, grus, actual_wt = calc_pcs, calc_grus, calc_weight
+                    else:
+                        pcs = grus = actual_wt = challan_wt = diff_wt = 0.0
+
+                else:
+                    input_wt = st.number_input("Weight (kg)", min_value=0.0, value=None, placeholder="Enter Weight (kg)...", step=0.1, key="pur_wt")
+                    if input_wt:
+                        calc_pcs = int(round((input_wt * 1550000.0) / (width * length * gsm))) if width * length * gsm > 0 else 0
+                        calc_grus = calc_pcs / 144.0
+                        st.info(f"💡 Calculated Pcs: `{calc_pcs}` | Calculated Gross: `{calc_grus:.2f}`")
+                        challan_wt = st.number_input("Challan Weight (kg)", min_value=0.0, value=float(input_wt), step=0.001, key="pur_cw")
+                        diff_wt = challan_wt - input_wt
+                        pcs, grus, actual_wt = calc_pcs, calc_grus, input_wt
+                    else:
+                        pcs = grus = actual_wt = challan_wt = diff_wt = 0.0
+
+            if pcs > 0:
+                st.write(f"**Summary:** `Diff Weight`: `{diff_wt:.3f} kg`")
+                if st.button("Submit Purchase Entry", type="primary"):
+                    params = {
+                        "action": "add_primary_stock",
+                        "date": entry_date.strftime("%d/%m/%Y"),
+                        "product": product,
+                        "width": width,
+                        "length": length,
+                        "gsm": gsm,
+                        "grus_change": grus,
+                        "pcs_change": pcs,
+                        "challan_weight_change": challan_wt,
+                        "weight_change": actual_wt,
+                        "diff_weight_change": diff_wt,
+                        "remark": remark
+                    }
+                    with st.spinner("Adding primary stock..."):
+                        res = requests.get(WEB_APP_URL, params=params, timeout=30)
+                        if res.status_code == 200 and res.json().get("status") == "success":
+                            st.toast("✅ Primary stock added successfully!")
+                            st.cache_data.clear()
+                            st.rerun()
+                        else:
+                            st.error(f"Error: {res.text}")
 
 # -------------------------------------------------------------------
-# TAB 3: TRANSFER STOCK TO COMPANY
+# TAB 3: TRANSFER STOCK TO COMPANY (PASSWORD PROTECTED)
 # -------------------------------------------------------------------
 with tab3:
     st.header("Shift Stock from Primary Warehouse to Company")
 
-    if data and data.get("primary_stock"):
-        df_p_stock = pd.DataFrame(data.get("primary_stock"))
-        selection_res = render_cascading_stock_selector(df_p_stock, key_prefix="tr", allow_new=False)
-
-        if selection_res is not None and selection_res["status"] == "existing":
-            selected_item = selection_res["data"]
-            avail_pcs = int(selected_item['Pcs'])
-            avail_grus = float(selected_item['Grus'])
-            w, l, g = float(selected_item['Width']), float(selected_item['Length']), float(selected_item['GSM'])
-
-            col1, col2 = st.columns(2)
-            with col1:
-                company = st.selectbox("Target Company", ["shivam enterprise", "GIRRAJ PACKAGING"], key="tr_comp")
-                trans_date = st.date_input("Transfer Date", datetime.now(), format="DD/MM/YYYY", key="tr_date")
-                inv_number = st.text_input("Invoice Number", value="", placeholder="Enter Invoice #", key="tr_inv")
-                inv_date = st.date_input("Invoice Date", datetime.now(), format="DD/MM/YYYY", key="tr_inv_date")
-
-            with col2:
-                calc_mode_tr = st.radio(
-                    "Entry Based On:",
-                    ["Enter Pieces (Pcs)", "Enter Gross (144 pcs)", "Enter Ream (500 pcs)", "Enter Weight (kg)"],
-                    horizontal=True,
-                    key="tr_mode"
-                )
-
-                if calc_mode_tr == "Enter Pieces (Pcs)":
-                    shift_pcs = st.number_input("Pcs to Shift", min_value=0, max_value=avail_pcs, value=None, placeholder="Enter Pcs...", step=1, key="tr_pcs")
-                    if shift_pcs:
-                        shift_grus = shift_pcs / 144.0
-                        shift_wt = (w * l * g * shift_pcs) / 1550000.0 if w * l * g > 0 else 0.0
-                        st.info(f"💡 Calculated Gross: `{shift_grus:.2f}` | Calculated Weight: `{shift_wt:.3f} kg`")
-                    else:
-                        shift_pcs = shift_grus = shift_wt = 0.0
-                
-                elif calc_mode_tr == "Enter Gross (144 pcs)":
-                    shift_grus = st.number_input("Gross to Shift", min_value=0.0, max_value=avail_grus, value=None, placeholder="Enter Gross...", step=0.01, key="tr_grus")
-                    if shift_grus:
-                        shift_pcs = int(round(shift_grus * 144))
-                        shift_wt = (w * l * g * shift_pcs) / 1550000.0 if w * l * g > 0 else 0.0
-                        st.info(f"💡 Calculated Pcs: `{shift_pcs}` | Calculated Weight: `{shift_wt:.3f} kg`")
-                    else:
-                        shift_pcs = shift_grus = shift_wt = 0.0
-
-                elif calc_mode_tr == "Enter Ream (500 pcs)":
-                    max_reams = avail_pcs / 500.0
-                    shift_ream = st.number_input("Reams to Shift", min_value=0.0, max_value=max_reams, value=None, placeholder="Enter Reams...", step=0.01, key="tr_ream")
-                    if shift_ream:
-                        shift_pcs = int(round(shift_ream * 500))
-                        shift_grus = shift_pcs / 144.0
-                        shift_wt = (w * l * g * shift_pcs) / 1550000.0 if w * l * g > 0 else 0.0
-                        st.info(f"💡 Calculated Pcs: `{shift_pcs}` | Calculated Weight: `{shift_wt:.3f} kg`")
-                    else:
-                        shift_pcs = shift_grus = shift_wt = 0.0
-
-                else:
-                    shift_wt = st.number_input("Weight to Shift (kg)", min_value=0.0, value=None, placeholder="Enter Weight (kg)...", step=0.1, key="tr_wt")
-                    if shift_wt:
-                        shift_pcs = int(round((shift_wt * 1550000.0) / (w * l * g))) if w * l * g > 0 else 0
-                        shift_grus = shift_pcs / 144.0
-                        st.info(f"💡 Calculated Pcs: `{shift_pcs}` | Calculated Gross: `{shift_grus:.2f}`")
-                    else:
-                        shift_pcs = shift_grus = shift_wt = 0.0
-
-                challan_wt = st.number_input("Challan Weight (kg)", min_value=0.0, value=float(shift_wt) if shift_wt else None, placeholder="Challan Wt...", step=0.001, key="tr_cw")
-                remark = st.text_input("Transfer Remark", value="", placeholder="Enter Remarks...", key="tr_rem")
-
-            if shift_pcs > 0:
-                if shift_pcs > avail_pcs:
-                    st.error(f"⚠️ Cannot shift {shift_pcs} pcs. Only {avail_pcs} pcs available in Primary Warehouse.")
-                elif st.button("🚀 Execute Transfer", type="primary"):
-                    params = {
-                        "action": "transfer_to_company",
-                        "company_name": company,
-                        "date": trans_date.strftime("%d/%m/%Y"),
-                        "invoice_number": inv_number,
-                        "invoice_date": inv_date.strftime("%d/%m/%Y"),
-                        "product": selected_item['Product'],
-                        "width": w,
-                        "length": l,
-                        "gsm": g,
-                        "grus_change": shift_grus,
-                        "pcs_change": shift_pcs,
-                        "challan_weight_change": challan_wt or shift_wt,
-                        "weight_change": shift_wt,
-                        "diff_weight_change": (challan_wt or shift_wt) - shift_wt,
-                        "remark": remark
-                    }
-                    with st.spinner(f"Transferring stock to {company}..."):
-                        res = requests.get(WEB_APP_URL, params=params, timeout=30)
-                        if res.status_code == 200 and res.json().get("status") == "success":
-                            st.toast(f"✅ Transferred stock to {company}!")
-                            st.cache_data.clear()
-                            st.rerun()
-                        else:
-                            st.error(f"Error: {res.text}")
+    if not is_authenticated:
+        st.warning("🔒 This section is locked. Please enter the Admin Password in the left sidebar to transfer stock.")
     else:
-        st.info("No stock available in Primary Warehouse to transfer.")
+        if data and data.get("primary_stock"):
+            df_p_stock = pd.DataFrame(data.get("primary_stock"))
+            selection_res = render_cascading_stock_selector(df_p_stock, key_prefix="tr", allow_new=False)
+
+            if selection_res is not None and selection_res["status"] == "existing":
+                selected_item = selection_res["data"]
+                avail_pcs = int(selected_item['Pcs'])
+                avail_grus = float(selected_item['Grus'])
+                w, l, g = float(selected_item['Width']), float(selected_item['Length']), float(selected_item['GSM'])
+
+                col1, col2 = st.columns(2)
+                with col1:
+                    company = st.selectbox("Target Company", ["shivam enterprise", "GIRRAJ PACKAGING"], key="tr_comp")
+                    trans_date = st.date_input("Transfer Date", datetime.now(), format="DD/MM/YYYY", key="tr_date")
+                    inv_number = st.text_input("Invoice Number", value="", placeholder="Enter Invoice #", key="tr_inv")
+                    inv_date = st.date_input("Invoice Date", datetime.now(), format="DD/MM/YYYY", key="tr_inv_date")
+
+                with col2:
+                    calc_mode_tr = st.radio(
+                        "Entry Based On:",
+                        ["Enter Pieces (Pcs)", "Enter Gross (144 pcs)", "Enter Ream (500 pcs)", "Enter Weight (kg)"],
+                        horizontal=True,
+                        key="tr_mode"
+                    )
+
+                    if calc_mode_tr == "Enter Pieces (Pcs)":
+                        shift_pcs = st.number_input("Pcs to Shift", min_value=0, max_value=avail_pcs, value=None, placeholder="Enter Pcs...", step=1, key="tr_pcs")
+                        if shift_pcs:
+                            shift_grus = shift_pcs / 144.0
+                            shift_wt = (w * l * g * shift_pcs) / 1550000.0 if w * l * g > 0 else 0.0
+                            st.info(f"💡 Calculated Gross: `{shift_grus:.2f}` | Calculated Weight: `{shift_wt:.3f} kg`")
+                        else:
+                            shift_pcs = shift_grus = shift_wt = 0.0
+                    
+                    elif calc_mode_tr == "Enter Gross (144 pcs)":
+                        shift_grus = st.number_input("Gross to Shift", min_value=0.0, max_value=avail_grus, value=None, placeholder="Enter Gross...", step=0.01, key="tr_grus")
+                        if shift_grus:
+                            shift_pcs = int(round(shift_grus * 144))
+                            shift_wt = (w * l * g * shift_pcs) / 1550000.0 if w * l * g > 0 else 0.0
+                            st.info(f"💡 Calculated Pcs: `{shift_pcs}` | Calculated Weight: `{shift_wt:.3f} kg`")
+                        else:
+                            shift_pcs = shift_grus = shift_wt = 0.0
+
+                    elif calc_mode_tr == "Enter Ream (500 pcs)":
+                        max_reams = avail_pcs / 500.0
+                        shift_ream = st.number_input("Reams to Shift", min_value=0.0, max_value=max_reams, value=None, placeholder="Enter Reams...", step=0.01, key="tr_ream")
+                        if shift_ream:
+                            shift_pcs = int(round(shift_ream * 500))
+                            shift_grus = shift_pcs / 144.0
+                            shift_wt = (w * l * g * shift_pcs) / 1550000.0 if w * l * g > 0 else 0.0
+                            st.info(f"💡 Calculated Pcs: `{shift_pcs}` | Calculated Weight: `{shift_wt:.3f} kg`")
+                        else:
+                            shift_pcs = shift_grus = shift_wt = 0.0
+
+                    else:
+                        shift_wt = st.number_input("Weight to Shift (kg)", min_value=0.0, value=None, placeholder="Enter Weight (kg)...", step=0.1, key="tr_wt")
+                        if shift_wt:
+                            shift_pcs = int(round((shift_wt * 1550000.0) / (w * l * g))) if w * l * g > 0 else 0
+                            shift_grus = shift_pcs / 144.0
+                            st.info(f"💡 Calculated Pcs: `{shift_pcs}` | Calculated Gross: `{shift_grus:.2f}`")
+                        else:
+                            shift_pcs = shift_grus = shift_wt = 0.0
+
+                    challan_wt = st.number_input("Challan Weight (kg)", min_value=0.0, value=float(shift_wt) if shift_wt else None, placeholder="Challan Wt...", step=0.001, key="tr_cw")
+                    remark = st.text_input("Transfer Remark", value="", placeholder="Enter Remarks...", key="tr_rem")
+
+                if shift_pcs > 0:
+                    if shift_pcs > avail_pcs:
+                        st.error(f"⚠️ Cannot shift {shift_pcs} pcs. Only {avail_pcs} pcs available in Primary Warehouse.")
+                    elif st.button("🚀 Execute Transfer", type="primary"):
+                        params = {
+                            "action": "transfer_to_company",
+                            "company_name": company,
+                            "date": trans_date.strftime("%d/%m/%Y"),
+                            "invoice_number": inv_number,
+                            "invoice_date": inv_date.strftime("%d/%m/%Y"),
+                            "product": selected_item['Product'],
+                            "width": w,
+                            "length": l,
+                            "gsm": g,
+                            "grus_change": shift_grus,
+                            "pcs_change": shift_pcs,
+                            "challan_weight_change": challan_wt or shift_wt,
+                            "weight_change": shift_wt,
+                            "diff_weight_change": (challan_wt or shift_wt) - shift_wt,
+                            "remark": remark
+                        }
+                        with st.spinner(f"Transferring stock to {company}..."):
+                            res = requests.get(WEB_APP_URL, params=params, timeout=30)
+                            if res.status_code == 200 and res.json().get("status") == "success":
+                                st.toast(f"✅ Transferred stock to {company}!")
+                                st.cache_data.clear()
+                                st.rerun()
+                            else:
+                                st.error(f"Error: {res.text}")
+        else:
+            st.info("No stock available in Primary Warehouse to transfer.")
 
 # -------------------------------------------------------------------
-# TAB 4: COMPANY USAGE & ADJUSTMENT
+# TAB 4: COMPANY USAGE & ADJUSTMENT (PASSWORD PROTECTED)
 # -------------------------------------------------------------------
 with tab4:
     st.header("📝 Record Company Stock Usage or Adjustment")
 
-    company = st.selectbox("Select Company Name", ["shivam enterprise", "GIRRAJ PACKAGING"], key="u_comp")
-    target_stock = data.get("stock_shivam", []) if company == "shivam enterprise" else data.get("stock_girraj", [])
-
-    if not target_stock:
-        st.warning(f"No stock records found for {company}.")
+    if not is_authenticated:
+        st.warning("🔒 This section is locked. Please enter the Admin Password in the left sidebar to record usage or adjustments.")
     else:
-        df_c_stock = pd.DataFrame(target_stock)
-        selection_res = render_cascading_stock_selector(df_c_stock, key_prefix="u", allow_new=False)
+        company = st.selectbox("Select Company Name", ["shivam enterprise", "GIRRAJ PACKAGING"], key="u_comp")
+        target_stock = data.get("stock_shivam", []) if company == "shivam enterprise" else data.get("stock_girraj", [])
 
-        if selection_res is not None and selection_res["status"] == "existing":
-            selected_item = selection_res["data"]
-            avail_pcs = int(selected_item['Pcs'])
-            avail_grus = float(selected_item['Grus'])
-            w, l, g = float(selected_item['Width']), float(selected_item['Length']), float(selected_item['GSM'])
+        if not target_stock:
+            st.warning(f"No stock records found for {company}.")
+        else:
+            df_c_stock = pd.DataFrame(target_stock)
+            selection_res = render_cascading_stock_selector(df_c_stock, key_prefix="u", allow_new=False)
 
-            col1, col2 = st.columns(2)
-            with col1:
-                entry_type = st.radio("Action Type", ["Used", "Adjusted"], horizontal=True, key="u_type")
-                usage_date = st.date_input("Date", datetime.now(), format="DD/MM/YYYY", key="u_date")
-                remark = st.text_input("Remark", value="", placeholder="Production batch / adjustment notes", key="u_rem")
+            if selection_res is not None and selection_res["status"] == "existing":
+                selected_item = selection_res["data"]
+                avail_pcs = int(selected_item['Pcs'])
+                avail_grus = float(selected_item['Grus'])
+                w, l, g = float(selected_item['Width']), float(selected_item['Length']), float(selected_item['GSM'])
 
-            with col2:
-                calc_mode_u = st.radio(
-                    "Quantity Input Method:",
-                    ["Enter Pieces (Pcs)", "Enter Gross (144 pcs)", "Enter Ream (500 pcs)", "Enter Weight (kg)"],
-                    horizontal=True,
-                    key="u_mode"
-                )
+                col1, col2 = st.columns(2)
+                with col1:
+                    entry_type = st.radio("Action Type", ["Used", "Adjusted"], horizontal=True, key="u_type")
+                    usage_date = st.date_input("Date", datetime.now(), format="DD/MM/YYYY", key="u_date")
+                    remark = st.text_input("Remark", value="", placeholder="Production batch / adjustment notes", key="u_rem")
 
-                if calc_mode_u == "Enter Pieces (Pcs)":
-                    use_pcs = st.number_input("Pcs", min_value=0, max_value=avail_pcs, value=None, placeholder="Enter Pcs...", step=1, key="u_pcs")
-                    if use_pcs:
-                        use_grus = use_pcs / 144.0
-                        use_wt = (w * l * g * use_pcs) / 1550000.0 if w * l * g > 0 else 0.0
-                        st.info(f"💡 Calculated Gross: `{use_grus:.2f}` | Weight: `{use_wt:.3f} kg`")
-                    else:
-                        use_pcs = use_grus = use_wt = 0.0
+                with col2:
+                    calc_mode_u = st.radio(
+                        "Quantity Input Method:",
+                        ["Enter Pieces (Pcs)", "Enter Gross (144 pcs)", "Enter Ream (500 pcs)", "Enter Weight (kg)"],
+                        horizontal=True,
+                        key="u_mode"
+                    )
 
-                elif calc_mode_u == "Enter Gross (144 pcs)":
-                    use_grus = st.number_input("Gross", min_value=0.0, max_value=avail_grus, value=None, placeholder="Enter Gross...", step=0.01, key="u_grus")
-                    if use_grus:
-                        use_pcs = int(round(use_grus * 144))
-                        use_wt = (w * l * g * use_pcs) / 1550000.0 if w * l * g > 0 else 0.0
-                        st.info(f"💡 Calculated Pcs: `{use_pcs}` | Weight: `{use_wt:.3f} kg`")
-                    else:
-                        use_pcs = use_grus = use_wt = 0.0
-
-                elif calc_mode_u == "Enter Ream (500 pcs)":
-                    max_reams_u = avail_pcs / 500.0
-                    use_ream = st.number_input("Ream", min_value=0.0, max_value=max_reams_u, value=None, placeholder="Enter Reams...", step=0.01, key="u_ream")
-                    if use_ream:
-                        use_pcs = int(round(use_ream * 500))
-                        use_grus = use_pcs / 144.0
-                        use_wt = (w * l * g * use_pcs) / 1550000.0 if w * l * g > 0 else 0.0
-                        st.info(f"💡 Calculated Pcs: `{use_pcs}` | Weight: `{use_wt:.3f} kg`")
-                    else:
-                        use_pcs = use_grus = use_wt = 0.0
-
-                else:
-                    use_wt = st.number_input("Weight (kg)", min_value=0.0, value=None, placeholder="Enter Weight (kg)...", step=0.1, key="u_wt")
-                    if use_wt:
-                        use_pcs = int(round((use_wt * 1550000.0) / (w * l * g))) if w * l * g > 0 else 0
-                        use_grus = use_pcs / 144.0
-                        st.info(f"💡 Calculated Pcs: `{use_pcs}` | Gross: `{use_grus:.2f}`")
-                    else:
-                        use_pcs = use_grus = use_wt = 0.0
-
-            if use_pcs > 0:
-                if use_pcs > avail_pcs:
-                    st.error(f"⚠️ Cannot deduct {use_pcs} pcs. Available balance for {company} is {avail_pcs} pcs.")
-                elif st.button(f"Submit {entry_type} Entry", type="primary"):
-                    params = {
-                        "action": "company_stock_action",
-                        "company_name": company,
-                        "type": entry_type,
-                        "date": usage_date.strftime("%d/%m/%Y"),
-                        "invoice_number": "-",
-                        "invoice_date": "-",
-                        "product": selected_item['Product'],
-                        "width": w,
-                        "length": l,
-                        "gsm": g,
-                        "grus_change": use_grus,
-                        "pcs_change": use_pcs,
-                        "challan_weight_change": use_wt,
-                        "weight_change": use_wt,
-                        "diff_weight_change": 0.0,
-                        "remark": remark
-                    }
-                    with st.spinner(f"Recording {entry_type} entry..."):
-                        res = requests.get(WEB_APP_URL, params=params, timeout=30)
-                        if res.status_code == 200 and res.json().get("status") == "success":
-                            st.toast(f"✅ Recorded {entry_type} entry for {company}!")
-                            st.cache_data.clear()
-                            st.rerun()
+                    if calc_mode_u == "Enter Pieces (Pcs)":
+                        use_pcs = st.number_input("Pcs", min_value=0, max_value=avail_pcs, value=None, placeholder="Enter Pcs...", step=1, key="u_pcs")
+                        if use_pcs:
+                            use_grus = use_pcs / 144.0
+                            use_wt = (w * l * g * use_pcs) / 1550000.0 if w * l * g > 0 else 0.0
+                            st.info(f"💡 Calculated Gross: `{use_grus:.2f}` | Weight: `{use_wt:.3f} kg`")
                         else:
-                            st.error(f"Error: {res.text}")
+                            use_pcs = use_grus = use_wt = 0.0
+
+                    elif calc_mode_u == "Enter Gross (144 pcs)":
+                        use_grus = st.number_input("Gross", min_value=0.0, max_value=avail_grus, value=None, placeholder="Enter Gross...", step=0.01, key="u_grus")
+                        if use_grus:
+                            use_pcs = int(round(use_grus * 144))
+                            use_wt = (w * l * g * use_pcs) / 1550000.0 if w * l * g > 0 else 0.0
+                            st.info(f"💡 Calculated Pcs: `{use_pcs}` | Weight: `{use_wt:.3f} kg`")
+                        else:
+                            use_pcs = use_grus = use_wt = 0.0
+
+                    elif calc_mode_u == "Enter Ream (500 pcs)":
+                        max_reams_u = avail_pcs / 500.0
+                        use_ream = st.number_input("Ream", min_value=0.0, max_value=max_reams_u, value=None, placeholder="Enter Reams...", step=0.01, key="u_ream")
+                        if use_ream:
+                            use_pcs = int(round(use_ream * 500))
+                            use_grus = use_pcs / 144.0
+                            use_wt = (w * l * g * use_pcs) / 1550000.0 if w * l * g > 0 else 0.0
+                            st.info(f"💡 Calculated Pcs: `{use_pcs}` | Weight: `{use_wt:.3f} kg`")
+                        else:
+                            use_pcs = use_grus = use_wt = 0.0
+
+                    else:
+                        use_wt = st.number_input("Weight (kg)", min_value=0.0, value=None, placeholder="Enter Weight (kg)...", step=0.1, key="u_wt")
+                        if use_wt:
+                            use_pcs = int(round((use_wt * 1550000.0) / (w * l * g))) if w * l * g > 0 else 0
+                            use_grus = use_pcs / 144.0
+                            st.info(f"💡 Calculated Pcs: `{use_pcs}` | Gross: `{use_grus:.2f}`")
+                        else:
+                            use_pcs = use_grus = use_wt = 0.0
+
+                if use_pcs > 0:
+                    if use_pcs > avail_pcs:
+                        st.error(f"⚠️ Cannot deduct {use_pcs} pcs. Available balance for {company} is {avail_pcs} pcs.")
+                    elif st.button(f"Submit {entry_type} Entry", type="primary"):
+                        params = {
+                            "action": "company_stock_action",
+                            "company_name": company,
+                            "type": entry_type,
+                            "date": usage_date.strftime("%d/%m/%Y"),
+                            "invoice_number": "-",
+                            "invoice_date": "-",
+                            "product": selected_item['Product'],
+                            "width": w,
+                            "length": l,
+                            "gsm": g,
+                            "grus_change": use_grus,
+                            "pcs_change": use_pcs,
+                            "challan_weight_change": use_wt,
+                            "weight_change": use_wt,
+                            "diff_weight_change": 0.0,
+                            "remark": remark
+                        }
+                        with st.spinner(f"Recording {entry_type} entry..."):
+                            res = requests.get(WEB_APP_URL, params=params, timeout=30)
+                            if res.status_code == 200 and res.json().get("status") == "success":
+                                st.toast(f"✅ Recorded {entry_type} entry for {company}!")
+                                st.cache_data.clear()
+                                st.rerun()
+                            else:
+                                st.error(f"Error: {res.text}")
