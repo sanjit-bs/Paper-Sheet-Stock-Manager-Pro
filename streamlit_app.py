@@ -412,4 +412,116 @@ with tab3:
                         "remark": remark
                     }
                     with st.spinner(f"Transferring stock to {company}..."):
-                        res = requests.get(WEB_APP_URL,
+                        res = requests.get(WEB_APP_URL, params=params, timeout=30)
+                        if res.status_code == 200 and res.json().get("status") == "success":
+                            st.toast(f"✅ Transferred stock to {company}!")
+                            st.cache_data.clear()
+                            st.rerun()
+                        else:
+                            st.error(f"Error: {res.text}")
+    else:
+        st.info("No stock available in Primary Warehouse to transfer.")
+
+# -------------------------------------------------------------------
+# TAB 4: COMPANY USAGE & ADJUSTMENT
+# -------------------------------------------------------------------
+with tab4:
+    st.header("📝 Record Company Stock Usage or Adjustment")
+
+    company = st.selectbox("Select Company Name", ["shivam enterprise", "GIRRAJ PACKAGING"], key="u_comp")
+    target_stock = data.get("stock_shivam", []) if company == "shivam enterprise" else data.get("stock_girraj", [])
+
+    if not target_stock:
+        st.warning(f"No stock records found for {company}.")
+    else:
+        df_c_stock = pd.DataFrame(target_stock)
+        selection_res = render_cascading_stock_selector(df_c_stock, key_prefix="u", allow_new=False)
+
+        if selection_res is not None and selection_res["status"] == "existing":
+            selected_item = selection_res["data"]
+            avail_pcs = int(selected_item['Pcs'])
+            avail_grus = float(selected_item['Grus'])
+            w, l, g = float(selected_item['Width']), float(selected_item['Length']), float(selected_item['GSM'])
+
+            col1, col2 = st.columns(2)
+            with col1:
+                entry_type = st.radio("Action Type", ["Used", "Adjusted"], horizontal=True, key="u_type")
+                usage_date = st.date_input("Date", datetime.now(), format="DD/MM/YYYY", key="u_date")
+                remark = st.text_input("Remark", value="", placeholder="Production batch / adjustment notes", key="u_rem")
+
+            with col2:
+                calc_mode_u = st.radio(
+                    "Quantity Input Method:",
+                    ["Enter Pieces (Pcs)", "Enter Gross (144 pcs)", "Enter Ream (500 pcs)", "Enter Weight (kg)"],
+                    horizontal=True,
+                    key="u_mode"
+                )
+
+                if calc_mode_u == "Enter Pieces (Pcs)":
+                    use_pcs = st.number_input("Pcs", min_value=0, max_value=avail_pcs, value=None, placeholder="Enter Pcs...", step=1, key="u_pcs")
+                    if use_pcs:
+                        use_grus = use_pcs / 144.0
+                        use_wt = (w * l * g * use_pcs) / 1550000.0 if w * l * g > 0 else 0.0
+                        st.info(f"💡 Calculated Gross: `{use_grus:.2f}` | Weight: `{use_wt:.3f} kg`")
+                    else:
+                        use_pcs = use_grus = use_wt = 0.0
+
+                elif calc_mode_u == "Enter Gross (144 pcs)":
+                    use_grus = st.number_input("Gross", min_value=0.0, max_value=avail_grus, value=None, placeholder="Enter Gross...", step=0.01, key="u_grus")
+                    if use_grus:
+                        use_pcs = int(round(use_grus * 144))
+                        use_wt = (w * l * g * use_pcs) / 1550000.0 if w * l * g > 0 else 0.0
+                        st.info(f"💡 Calculated Pcs: `{use_pcs}` | Weight: `{use_wt:.3f} kg`")
+                    else:
+                        use_pcs = use_grus = use_wt = 0.0
+
+                elif calc_mode_u == "Enter Ream (500 pcs)":
+                    max_reams_u = avail_pcs / 500.0
+                    use_ream = st.number_input("Ream", min_value=0.0, max_value=max_reams_u, value=None, placeholder="Enter Reams...", step=0.01, key="u_ream")
+                    if use_ream:
+                        use_pcs = int(round(use_ream * 500))
+                        use_grus = use_pcs / 144.0
+                        use_wt = (w * l * g * use_pcs) / 1550000.0 if w * l * g > 0 else 0.0
+                        st.info(f"💡 Calculated Pcs: `{use_pcs}` | Weight: `{use_wt:.3f} kg`")
+                    else:
+                        use_pcs = use_grus = use_wt = 0.0
+
+                else:
+                    use_wt = st.number_input("Weight (kg)", min_value=0.0, value=None, placeholder="Enter Weight (kg)...", step=0.1, key="u_wt")
+                    if use_wt:
+                        use_pcs = int(round((use_wt * 1550000.0) / (w * l * g))) if w * l * g > 0 else 0
+                        use_grus = use_pcs / 144.0
+                        st.info(f"💡 Calculated Pcs: `{use_pcs}` | Gross: `{use_grus:.2f}`")
+                    else:
+                        use_pcs = use_grus = use_wt = 0.0
+
+            if use_pcs > 0:
+                if use_pcs > avail_pcs:
+                    st.error(f"⚠️ Cannot deduct {use_pcs} pcs. Available balance for {company} is {avail_pcs} pcs.")
+                elif st.button(f"Submit {entry_type} Entry", type="primary"):
+                    params = {
+                        "action": "company_stock_action",
+                        "company_name": company,
+                        "type": entry_type,
+                        "date": usage_date.strftime("%d/%m/%Y"),
+                        "invoice_number": "-",
+                        "invoice_date": "-",
+                        "product": selected_item['Product'],
+                        "width": w,
+                        "length": l,
+                        "gsm": g,
+                        "grus_change": use_grus,
+                        "pcs_change": use_pcs,
+                        "challan_weight_change": use_wt,
+                        "weight_change": use_wt,
+                        "diff_weight_change": 0.0,
+                        "remark": remark
+                    }
+                    with st.spinner(f"Recording {entry_type} entry..."):
+                        res = requests.get(WEB_APP_URL, params=params, timeout=30)
+                        if res.status_code == 200 and res.json().get("status") == "success":
+                            st.toast(f"✅ Recorded {entry_type} entry for {company}!")
+                            st.cache_data.clear()
+                            st.rerun()
+                        else:
+                            st.error(f"Error: {res.text}")
