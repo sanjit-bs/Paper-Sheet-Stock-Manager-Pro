@@ -1,7 +1,7 @@
-import streamlit as st
-import requests
-import pandas as pd
 from datetime import datetime
+import pandas as pd
+import requests
+import streamlit as st
 
 # Page Configuration
 st.set_page_config(page_title="Paper Stock Management", page_icon="📦", layout="wide")
@@ -22,10 +22,11 @@ if user_password != ADMIN_PASSWORD:
 
 st.sidebar.success("🔓 Access Granted")
 
-# Fetch Data Helper
+# Fetch Data Helper with short cache for snappy UI interactions
+@st.cache_data(ttl=10)
 def fetch_all_data():
     try:
-        res = requests.get(f"{WEB_APP_URL}?action=read_all")
+        res = requests.get(f"{WEB_APP_URL}?action=read_all", timeout=30)
         if res.status_code == 200:
             return res.json()
     except Exception as e:
@@ -42,7 +43,7 @@ def safe_float(val):
         return None
 
 # Dynamic Cascading Selector with Auto-Selection for Single Options
-def render_cascading_stock_selector(df_stock, key_prefix):
+def render_cascading_stock_selector(df_stock, key_prefix, allow_new=True):
     st.subheader("🔍 Product & Specifications Selection")
     
     df = df_stock.copy() if not df_stock.empty else pd.DataFrame(columns=['Product', 'Width', 'Length', 'GSM', 'Grus', 'Pcs', 'Challan Weight'])
@@ -58,16 +59,16 @@ def render_cascading_stock_selector(df_stock, key_prefix):
     curr_w = st.session_state.get(f"{key_prefix}_w", "Select...")
     curr_l = st.session_state.get(f"{key_prefix}_l", "Select...")
 
-    # Dynamic Cascading Dropdown Filtering
-    # 1. Product options from the entire dataset
-    avail_prods = ["Select..."] + sorted(df['Product'].dropna().unique().tolist()) + ["➕ Add New"] if not df.empty else ["Select...", "➕ Add New"]
+    new_opt = ["➕ Add New"] if allow_new else []
+
+    # 1. Product options
+    avail_prods = ["Select..."] + sorted(df['Product'].dropna().unique().tolist()) + new_opt if not df.empty else ["Select..."] + new_opt
 
     # 2. Width options depend on selected Product
     df_for_w = df[df['Product'] == curr_prod] if curr_prod not in ["Select...", "➕ Add New", ""] else df
     w_list = [str(w) for w in sorted(df_for_w['Width'].dropna().unique().tolist())]
-    avail_widths = ["Select..."] + w_list + ["➕ Add New"] if not df_for_w.empty else ["Select...", "➕ Add New"]
+    avail_widths = ["Select..."] + w_list + new_opt if not df_for_w.empty else ["Select..."] + new_opt
     
-    # Auto-select Width if only 1 option exists
     if len(w_list) == 1 and curr_w not in w_list and curr_w != "➕ Add New":
         st.session_state[f"{key_prefix}_w"] = w_list[0]
         curr_w = w_list[0]
@@ -77,9 +78,8 @@ def render_cascading_stock_selector(df_stock, key_prefix):
     if safe_float(curr_w) is not None:
         df_for_l = df_for_l[df_for_l['Width'] == safe_float(curr_w)]
     l_list = [str(l) for l in sorted(df_for_l['Length'].dropna().unique().tolist())]
-    avail_lengths = ["Select..."] + l_list + ["➕ Add New"] if not df_for_l.empty else ["Select...", "➕ Add New"]
+    avail_lengths = ["Select..."] + l_list + new_opt if not df_for_l.empty else ["Select..."] + new_opt
     
-    # Auto-select Length if only 1 option exists
     if len(l_list) == 1 and curr_l not in l_list and curr_l != "➕ Add New":
         st.session_state[f"{key_prefix}_l"] = l_list[0]
         curr_l = l_list[0]
@@ -89,16 +89,14 @@ def render_cascading_stock_selector(df_stock, key_prefix):
     if safe_float(curr_l) is not None:
         df_for_g = df_for_g[df_for_g['Length'] == safe_float(curr_l)]
     g_list = [str(g) for g in sorted(df_for_g['GSM'].dropna().unique().tolist())]
-    avail_gsms = ["Select..."] + g_list + ["➕ Add New"] if not df_for_g.empty else ["Select...", "➕ Add New"]
+    avail_gsms = ["Select..."] + g_list + new_opt if not df_for_g.empty else ["Select..."] + new_opt
     
-    # Auto-select GSM if only 1 option exists
     curr_g = st.session_state.get(f"{key_prefix}_gsm", "Select...")
     if len(g_list) == 1 and curr_g not in g_list and curr_g != "➕ Add New":
         st.session_state[f"{key_prefix}_gsm"] = g_list[0]
 
     # Render 4 Dropdown Columns
     col_p, col_w, col_l, col_g = st.columns(4)
-
     final_prod, final_w, final_l, final_g = None, None, None, None
 
     with col_p:
@@ -149,7 +147,7 @@ def render_cascading_stock_selector(df_stock, key_prefix):
         )
         return {"status": "existing", "data": selected_row}
 
-    elif final_prod and final_w is not None and final_l is not None and final_g is not None:
+    elif allow_new and final_prod and final_w is not None and final_l is not None and final_g is not None:
         st.info("✨ **New Specification Combination Ready!** Enter quantity details below.")
         return {
             "status": "new",
@@ -182,6 +180,7 @@ tab1, tab2, tab3, tab4 = st.tabs([
 with tab1:
     st.header("Stock & History Overview")
     if st.button("🔄 Refresh Data"):
+        st.cache_data.clear()
         st.rerun()
 
     if data and data.get("status") == "success":
@@ -189,21 +188,24 @@ with tab1:
 
         with sub_tab1:
             st.subheader("Primary Stock")
-            st.dataframe(pd.DataFrame(data.get("primary_stock", [])), use_container_width=True)
-            st.subheader("Primary History (Transfers Out)")
-            st.dataframe(pd.DataFrame(data.get("primary_history", [])), use_container_width=True)
+            st.dataframe(pd.DataFrame(data.get("primary_stock", [])), use_container_width=True, hide_index=True)
+            st.subheader("Primary History (Latest First)")
+            p_hist = pd.DataFrame(data.get("primary_history", []))
+            st.dataframe(p_hist.iloc[::-1] if not p_hist.empty else p_hist, use_container_width=True, hide_index=True)
 
         with sub_tab2:
             st.subheader("Shivam Enterprise Stock")
-            st.dataframe(pd.DataFrame(data.get("stock_shivam", [])), use_container_width=True)
-            st.subheader("Shivam Enterprise History")
-            st.dataframe(pd.DataFrame(data.get("history_shivam", [])), use_container_width=True)
+            st.dataframe(pd.DataFrame(data.get("stock_shivam", [])), use_container_width=True, hide_index=True)
+            st.subheader("Shivam Enterprise History (Latest First)")
+            s_hist = pd.DataFrame(data.get("history_shivam", []))
+            st.dataframe(s_hist.iloc[::-1] if not s_hist.empty else s_hist, use_container_width=True, hide_index=True)
 
         with sub_tab3:
             st.subheader("Girraj Packaging Stock")
-            st.dataframe(pd.DataFrame(data.get("stock_girraj", [])), use_container_width=True)
-            st.subheader("Girraj Packaging History")
-            st.dataframe(pd.DataFrame(data.get("history_girraj", [])), use_container_width=True)
+            st.dataframe(pd.DataFrame(data.get("stock_girraj", [])), use_container_width=True, hide_index=True)
+            st.subheader("Girraj Packaging History (Latest First)")
+            g_hist = pd.DataFrame(data.get("history_girraj", []))
+            st.dataframe(g_hist.iloc[::-1] if not g_hist.empty else g_hist, use_container_width=True, hide_index=True)
 
 # -------------------------------------------------------------------
 # TAB 2: PURCHASE PRIMARY STOCK
@@ -212,7 +214,7 @@ with tab2:
     st.header("Add Purchase Stock to Primary Warehouse")
 
     df_p_stock = pd.DataFrame(data.get("primary_stock", [])) if data else pd.DataFrame()
-    selection_res = render_cascading_stock_selector(df_p_stock, key_prefix="pur")
+    selection_res = render_cascading_stock_selector(df_p_stock, key_prefix="pur", allow_new=True)
 
     if selection_res is not None:
         if selection_res["status"] == "existing":
@@ -230,11 +232,16 @@ with tab2:
 
         col1, col2 = st.columns(2)
         with col1:
-            entry_date = st.date_input("Purchase Date", datetime.now(), key="pur_date")
+            entry_date = st.date_input("Purchase Date", datetime.now(), format="DD/MM/YYYY", key="pur_date")
             remark = st.text_input("Remark", value="", placeholder="Supplier details / Lot notes", key="pur_rem")
 
         with col2:
-            calc_mode = st.radio("Entry Based On:", ["Enter Pieces (Pcs)", "Enter Gross (144 pcs)", "Enter Ream (500 pcs)", "Enter Weight (kg)"], horizontal=True, key="pur_mode")
+            calc_mode = st.radio(
+                "Entry Based On:",
+                ["Enter Pieces (Pcs)", "Enter Gross (144 pcs)", "Enter Ream (500 pcs)", "Enter Weight (kg)"],
+                horizontal=True,
+                key="pur_mode"
+            )
 
             if calc_mode == "Enter Pieces (Pcs)":
                 input_pcs = st.number_input("Pcs", min_value=0, value=None, placeholder="Enter Pcs...", step=1, key="pur_pcs")
@@ -287,7 +294,7 @@ with tab2:
 
         if pcs > 0:
             st.write(f"**Summary:** `Diff Weight`: `{diff_wt:.3f} kg`")
-            if st.button("Submit Purchase Entry"):
+            if st.button("Submit Purchase Entry", type="primary"):
                 params = {
                     "action": "add_primary_stock",
                     "date": entry_date.strftime("%d/%m/%Y"),
@@ -302,10 +309,14 @@ with tab2:
                     "diff_weight_change": diff_wt,
                     "remark": remark
                 }
-                res = requests.get(WEB_APP_URL, params=params)
-                if res.status_code == 200:
-                    st.success("✅ Primary stock added successfully!")
-                    st.rerun()
+                with st.spinner("Adding primary stock..."):
+                    res = requests.get(WEB_APP_URL, params=params, timeout=30)
+                    if res.status_code == 200 and res.json().get("status") == "success":
+                        st.toast("✅ Primary stock added successfully!")
+                        st.cache_data.clear()
+                        st.rerun()
+                    else:
+                        st.error(f"Error: {res.text}")
 
 # -------------------------------------------------------------------
 # TAB 3: TRANSFER STOCK TO COMPANY
@@ -315,23 +326,31 @@ with tab3:
 
     if data and data.get("primary_stock"):
         df_p_stock = pd.DataFrame(data.get("primary_stock"))
-        selection_res = render_cascading_stock_selector(df_p_stock, key_prefix="tr")
+        selection_res = render_cascading_stock_selector(df_p_stock, key_prefix="tr", allow_new=False)
 
         if selection_res is not None and selection_res["status"] == "existing":
             selected_item = selection_res["data"]
+            avail_pcs = int(selected_item['Pcs'])
+            avail_grus = float(selected_item['Grus'])
+            w, l, g = float(selected_item['Width']), float(selected_item['Length']), float(selected_item['GSM'])
+
             col1, col2 = st.columns(2)
             with col1:
-                company = st.selectbox("Target Company", ["shivam enterprise", "GIRRAJ PACKAGING"])
-                trans_date = st.date_input("Transfer Date", datetime.now(), key="tr_date")
+                company = st.selectbox("Target Company", ["shivam enterprise", "GIRRAJ PACKAGING"], key="tr_comp")
+                trans_date = st.date_input("Transfer Date", datetime.now(), format="DD/MM/YYYY", key="tr_date")
                 inv_number = st.text_input("Invoice Number", value="", placeholder="Enter Invoice #", key="tr_inv")
-                inv_date = st.date_input("Invoice Date", datetime.now(), key="tr_inv_date")
+                inv_date = st.date_input("Invoice Date", datetime.now(), format="DD/MM/YYYY", key="tr_inv_date")
 
             with col2:
-                calc_mode_tr = st.radio("Entry Based On:", ["Enter Pieces (Pcs)", "Enter Gross (144 pcs)", "Enter Ream (500 pcs)", "Enter Weight (kg)"], horizontal=True, key="tr_mode")
-                w, l, g = float(selected_item['Width']), float(selected_item['Length']), float(selected_item['GSM'])
+                calc_mode_tr = st.radio(
+                    "Entry Based On:",
+                    ["Enter Pieces (Pcs)", "Enter Gross (144 pcs)", "Enter Ream (500 pcs)", "Enter Weight (kg)"],
+                    horizontal=True,
+                    key="tr_mode"
+                )
 
                 if calc_mode_tr == "Enter Pieces (Pcs)":
-                    shift_pcs = st.number_input("Pcs to Shift", min_value=0, max_value=int(selected_item['Pcs']), value=None, placeholder="Enter Pcs...", step=1, key="tr_pcs")
+                    shift_pcs = st.number_input("Pcs to Shift", min_value=0, max_value=avail_pcs, value=None, placeholder="Enter Pcs...", step=1, key="tr_pcs")
                     if shift_pcs:
                         shift_grus = shift_pcs / 144.0
                         shift_wt = (w * l * g * shift_pcs) / 1550000.0 if w * l * g > 0 else 0.0
@@ -340,7 +359,7 @@ with tab3:
                         shift_pcs = shift_grus = shift_wt = 0.0
                 
                 elif calc_mode_tr == "Enter Gross (144 pcs)":
-                    shift_grus = st.number_input("Gross to Shift", min_value=0.0, max_value=float(selected_item['Grus']), value=None, placeholder="Enter Gross...", step=0.01, key="tr_grus")
+                    shift_grus = st.number_input("Gross to Shift", min_value=0.0, max_value=avail_grus, value=None, placeholder="Enter Gross...", step=0.01, key="tr_grus")
                     if shift_grus:
                         shift_pcs = int(round(shift_grus * 144))
                         shift_wt = (w * l * g * shift_pcs) / 1550000.0 if w * l * g > 0 else 0.0
@@ -349,7 +368,8 @@ with tab3:
                         shift_pcs = shift_grus = shift_wt = 0.0
 
                 elif calc_mode_tr == "Enter Ream (500 pcs)":
-                    shift_ream = st.number_input("Reams to Shift", min_value=0.0, value=None, placeholder="Enter Reams...", step=0.01, key="tr_ream")
+                    max_reams = avail_pcs / 500.0
+                    shift_ream = st.number_input("Reams to Shift", min_value=0.0, max_value=max_reams, value=None, placeholder="Enter Reams...", step=0.01, key="tr_ream")
                     if shift_ream:
                         shift_pcs = int(round(shift_ream * 500))
                         shift_grus = shift_pcs / 144.0
@@ -370,122 +390,26 @@ with tab3:
                 challan_wt = st.number_input("Challan Weight (kg)", min_value=0.0, value=float(shift_wt) if shift_wt else None, placeholder="Challan Wt...", step=0.001, key="tr_cw")
                 remark = st.text_input("Transfer Remark", value="", placeholder="Enter Remarks...", key="tr_rem")
 
-            if shift_pcs > 0 and st.button("🚀 Execute Transfer"):
-                params = {
-                    "action": "transfer_to_company",
-                    "company_name": company,
-                    "date": trans_date.strftime("%d/%m/%Y"),
-                    "invoice_number": inv_number,
-                    "invoice_date": inv_date.strftime("%d/%m/%Y"),
-                    "product": selected_item['Product'],
-                    "width": w,
-                    "length": l,
-                    "gsm": g,
-                    "grus_change": shift_grus,
-                    "pcs_change": shift_pcs,
-                    "challan_weight_change": challan_wt or shift_wt,
-                    "weight_change": shift_wt,
-                    "diff_weight_change": (challan_wt or shift_wt) - shift_wt,
-                    "remark": remark
-                }
-                res = requests.get(WEB_APP_URL, params=params)
-                if res.status_code == 200:
-                    st.success(f"✅ Transferred stock to {company}!")
-                    st.rerun()
-
-# -------------------------------------------------------------------
-# TAB 4: COMPANY USAGE & ADJUSTMENT
-# -------------------------------------------------------------------
-with tab4:
-    st.header("📝 Record Company Stock Usage or Adjustment")
-
-    company = st.selectbox("Select Company Name", ["shivam enterprise", "GIRRAJ PACKAGING"], key="u_comp")
-    target_stock = data.get("stock_shivam", []) if company == "shivam enterprise" else data.get("stock_girraj", [])
-
-    if not target_stock:
-        st.warning(f"No stock records found for {company}.")
-    else:
-        df_c_stock = pd.DataFrame(target_stock)
-        selection_res = render_cascading_stock_selector(df_c_stock, key_prefix="u")
-
-        if selection_res is not None and selection_res["status"] == "existing":
-            selected_item = selection_res["data"]
-            col1, col2 = st.columns(2)
-            with col1:
-                entry_type = st.radio("Action Type", ["Used", "Adjusted"], horizontal=True, key="u_type")
-                usage_date = st.date_input("Date", datetime.now(), format="DD/MM/YYYY", key="u_date")
-                remark = st.text_input("Remark", value="", placeholder="Production batch / adjustment notes", key="u_rem")
-
-            with col2:
-                calc_mode_u = st.radio(
-                    "Quantity Input Method:",
-                    ["Enter Pieces (Pcs)", "Enter Gross (144 pcs)", "Enter Ream (500 pcs)", "Enter Weight (kg)"],
-                    horizontal=True,
-                    key="u_mode"
-                )
-                w, l, g = float(selected_item['Width']), float(selected_item['Length']), float(selected_item['GSM'])
-
-                if calc_mode_u == "Enter Pieces (Pcs)":
-                    use_pcs = st.number_input("Pcs", min_value=0, value=None, placeholder="Enter Pcs...", step=1, key="u_pcs")
-                    if use_pcs:
-                        use_grus = use_pcs / 144.0
-                        use_wt = (w * l * g * use_pcs) / 1550000.0 if w * l * g > 0 else 0.0
-                        st.info(f"💡 Calculated Gross: `{use_grus:.2f}` | Weight: `{use_wt:.3f} kg`")
-                    else:
-                        use_pcs = use_grus = use_wt = 0.0
-
-                elif calc_mode_u == "Enter Gross (144 pcs)":
-                    use_grus = st.number_input("Gross", min_value=0.0, value=None, placeholder="Enter Gross...", step=0.01, key="u_grus")
-                    if use_grus:
-                        use_pcs = int(round(use_grus * 144))
-                        use_wt = (w * l * g * use_pcs) / 1550000.0 if w * l * g > 0 else 0.0
-                        st.info(f"💡 Calculated Pcs: `{use_pcs}` | Weight: `{use_wt:.3f} kg`")
-                    else:
-                        use_pcs = use_grus = use_wt = 0.0
-
-                elif calc_mode_u == "Enter Ream (500 pcs)":
-                    use_ream = st.number_input("Ream", min_value=0.0, value=None, placeholder="Enter Reams...", step=0.01, key="u_ream")
-                    if use_ream:
-                        use_pcs = int(round(use_ream * 500))
-                        use_grus = use_pcs / 144.0
-                        use_wt = (w * l * g * use_pcs) / 1550000.0 if w * l * g > 0 else 0.0
-                        st.info(f"💡 Calculated Pcs: `{use_pcs}` | Weight: `{use_wt:.3f} kg`")
-                    else:
-                        use_pcs = use_grus = use_wt = 0.0
-
-                else:
-                    use_wt = st.number_input("Weight (kg)", min_value=0.0, value=None, placeholder="Enter Weight (kg)...", step=0.1, key="u_wt")
-                    if use_wt:
-                        use_pcs = int(round((use_wt * 1550000.0) / (w * l * g))) if w * l * g > 0 else 0
-                        use_grus = use_pcs / 144.0
-                        st.info(f"💡 Calculated Pcs: `{use_pcs}` | Gross: `{use_grus:.2f}`")
-                    else:
-                        use_pcs = use_grus = use_wt = 0.0
-
-            if use_pcs > 0 and st.button(f"Submit {entry_type} Entry", type="primary"):
-                params = {
-                    "action": "company_stock_action",
-                    "company_name": company,
-                    "type": entry_type,
-                    "date": usage_date.strftime("%d/%m/%Y"),
-                    "invoice_number": "-",
-                    "invoice_date": "-",
-                    "product": selected_item['Product'],
-                    "width": w,
-                    "length": l,
-                    "gsm": g,
-                    "grus_change": use_grus,
-                    "pcs_change": use_pcs,
-                    "challan_weight_change": use_wt,
-                    "weight_change": use_wt,
-                    "diff_weight_change": 0.0,
-                    "remark": remark
-                }
-                with st.spinner(f"Recording {entry_type} entry..."):
-                    res = requests.get(WEB_APP_URL, params=params, timeout=30)
-                    if res.status_code == 200 and res.json().get("status") == "success":
-                        st.toast(f"✅ Recorded {entry_type} entry for {company}!")
-                        st.cache_data.clear()
-                        st.rerun()
-                    else:
-                        st.error(f"Error: {res.text}")
+            if shift_pcs > 0:
+                if shift_pcs > avail_pcs:
+                    st.error(f"⚠️ Cannot shift {shift_pcs} pcs. Only {avail_pcs} pcs available in Primary Warehouse.")
+                elif st.button("🚀 Execute Transfer", type="primary"):
+                    params = {
+                        "action": "transfer_to_company",
+                        "company_name": company,
+                        "date": trans_date.strftime("%d/%m/%Y"),
+                        "invoice_number": inv_number,
+                        "invoice_date": inv_date.strftime("%d/%m/%Y"),
+                        "product": selected_item['Product'],
+                        "width": w,
+                        "length": l,
+                        "gsm": g,
+                        "grus_change": shift_grus,
+                        "pcs_change": shift_pcs,
+                        "challan_weight_change": challan_wt or shift_wt,
+                        "weight_change": shift_wt,
+                        "diff_weight_change": (challan_wt or shift_wt) - shift_wt,
+                        "remark": remark
+                    }
+                    with st.spinner(f"Transferring stock to {company}..."):
+                        res = requests.get(WEB_APP_URL,
