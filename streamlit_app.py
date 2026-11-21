@@ -10,7 +10,7 @@ st.title("📦 Paper Stock Management Dashboard")
 
 # Sidebar Configuration
 st.sidebar.header("Settings")
-WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxsPxP17kHYPRIAKi1Knc9nP6UCPC63ggilvwAFVOwmx8uuOHe6PmVGuZ6W0MnEie3w/exec"
+WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwP6PuYmT002iNC9bPftiHIOpZEqukZ8mevH0Z12bR4i-Dy9lrJ_UrLjGNvdtHUSkKl/exec"
 
 ADMIN_PASSWORD = "1234"
 user_password = st.sidebar.text_input("Enter Admin Password:", type="password")
